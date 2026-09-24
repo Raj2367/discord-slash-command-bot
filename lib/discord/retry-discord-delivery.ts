@@ -4,6 +4,8 @@ import {
   DeliveryResult,
 } from "./deliver-interaction-response";
 
+export type RetriedDeliveryResult = DeliveryResult & { attempts: number };
+
 export interface RetryDeliveryOptions {
   deliverer?: (
     input: DeliverInteractionResponseInput
@@ -14,7 +16,7 @@ export interface RetryDeliveryOptions {
 export async function retryDiscordDelivery(
   input: DeliverInteractionResponseInput,
   options: RetryDeliveryOptions = {}
-): Promise<DeliveryResult> {
+): Promise<RetriedDeliveryResult> {
   const deliverer = options.deliverer || deliverInteractionResponse;
   const sleep =
     options.sleep ||
@@ -23,6 +25,7 @@ export async function retryDiscordDelivery(
   const delays = [1000, 3000]; // After attempt 1 (~1s), after attempt 2 (~3s)
   const maxAttempts = 3;
 
+  let attempts = 0;
   let lastResult: DeliveryResult = {
     success: false,
     category: "network",
@@ -30,15 +33,16 @@ export async function retryDiscordDelivery(
   };
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    attempts++;
     const result = await deliverer(input);
     lastResult = result;
 
     if (result.success) {
-      return result;
+      return { ...result, attempts };
     }
 
     if (result.category === "permanent") {
-      return result;
+      return { ...result, attempts };
     }
 
     if (attempt >= maxAttempts) {
@@ -49,5 +53,5 @@ export async function retryDiscordDelivery(
     await sleep(delayMs);
   }
 
-  return lastResult;
+  return { ...lastResult, attempts };
 }
