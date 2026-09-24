@@ -6,3 +6,84 @@ generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
 }
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+model DiscordServerConfig {
+  id               String   @id @default(cuid())
+  guildId          String   @unique
+  guildName        String
+  channelId        String?
+  mirrorType       String?
+  mirrorWebhookUrl String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model CommandRule {
+  id                 String   @id @default(cuid())
+  commandName        String   @unique
+  enabled            Boolean  @default(true)
+  responseText       String
+  mirrorEnabled      Boolean  @default(false)
+  channelPostEnabled Boolean  @default(false)
+  aiEnabled          Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+enum InteractionStatus {
+  RECEIVED
+  COMPLETED
+  FAILED
+}
+
+model InteractionLog {
+  id             String            @id @default(cuid())
+  interactionId  String            @unique
+  guildId        String
+  channelId      String
+  userId         String
+  username       String
+  commandName    String
+  commandOptions Json?
+  status         InteractionStatus
+  createdAt      DateTime          @default(now())
+  processedAt    DateTime?
+  actions        ActionRecord[]
+
+  @@index([createdAt])
+}
+
+enum ActionType {
+  DISCORD_RESPONSE
+  CHANNEL_POST
+  MIRROR
+}
+
+enum ActionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model ActionRecord {
+  id               String         @id @default(cuid())
+  interactionLogId String
+  interactionLog   InteractionLog @relation(fields: [interactionLogId], references: [id], onDelete: Cascade)
+  type             ActionType
+  status           ActionStatus
+  attempts         Int            @default(0)
+  lastError        String?
+  result           Json?
+  createdAt        DateTime       @default(now())
+  completedAt      DateTime?
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([interactionLogId, type])
+}
