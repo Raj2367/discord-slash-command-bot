@@ -277,4 +277,76 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(logUpdatedArgs.data.status, "FAILED");
     assert.ok(logUpdatedArgs.data.processedAt instanceof Date);
   });
+
+  await t.test("9. Successful primary Discord response + channel post enabled invokes retryChannelPost", async () => {
+    let cpCalled = false;
+    let cpInput: any = null;
+    const cpDeliverer = async (input: any): Promise<DeliveryResult> => {
+      cpCalled = true;
+      cpInput = input;
+      return { success: true };
+    };
+
+    const input = {
+      ...baseInput,
+      channelPostEnabled: true,
+      channelId: "chan_123",
+      botToken: "bot_token_secret",
+    };
+
+    const result = await processInteraction(input, {
+      deliverer: async (input: any): Promise<DeliveryResult> => {
+        return { success: true };
+      },
+      sleep: async () => {},
+      client: {
+        actionRecord: { updateMany: async () => ({ count: 1 }) },
+        interactionLog: { update: async () => ({}) },
+      },
+      channelPost: {
+        deliverer: cpDeliverer,
+        sleep: async () => {},
+      },
+    });
+
+    assert.strictEqual(result.deliveryResult.success, true);
+    assert.strictEqual(cpCalled, true);
+    assert.deepStrictEqual(cpInput, {
+      channelId: "chan_123",
+      botToken: "bot_token_secret",
+      message: "System is healthy",
+    });
+  });
+
+  await t.test("10. Disabled channel post does not invoke retryChannelPost", async () => {
+    let cpCalled = false;
+    const cpDeliverer = async (_input: any): Promise<DeliveryResult> => {
+      cpCalled = true;
+      return { success: true };
+    };
+
+    const input = {
+      ...baseInput,
+      channelPostEnabled: false,
+      channelId: "chan_123",
+      botToken: "bot_token_secret",
+    };
+
+    await processInteraction(input, {
+      deliverer: async (input: any): Promise<DeliveryResult> => {
+        return { success: true };
+      },
+      sleep: async () => {},
+      client: {
+        actionRecord: { updateMany: async () => ({ count: 1 }) },
+        interactionLog: { update: async () => ({}) },
+      },
+      channelPost: {
+        deliverer: cpDeliverer,
+        sleep: async () => {},
+      },
+    });
+
+    assert.strictEqual(cpCalled, false);
+  });
 });

@@ -3,6 +3,7 @@ import {
   RetriedDeliveryResult,
   RetryDeliveryOptions,
 } from "./retry-discord-delivery";
+import { retryChannelPost, RetryChannelPostOptions } from "./retry-channel-post";
 import { prisma } from "@/lib/db";
 
 export interface ProcessInteractionClient {
@@ -37,6 +38,9 @@ export interface ProcessInteractionInput {
     message: string;
     [key: string]: any;
   };
+  channelPostEnabled?: boolean;
+  channelId?: string;
+  botToken?: string;
 }
 
 export interface ProcessInteractionResult {
@@ -46,9 +50,21 @@ export interface ProcessInteractionResult {
 
 export async function processInteraction(
   input: ProcessInteractionInput,
-  options: RetryDeliveryOptions & { client?: ProcessInteractionClient } = {}
+  options: RetryDeliveryOptions & {
+    client?: ProcessInteractionClient;
+    channelPost?: RetryChannelPostOptions;
+  } = {}
 ): Promise<ProcessInteractionResult> {
-  const { interactionLogId, applicationId, interactionToken, commandName, responseSnapshot } = input;
+  const {
+    interactionLogId,
+    applicationId,
+    interactionToken,
+    commandName,
+    responseSnapshot,
+    channelPostEnabled,
+    channelId,
+    botToken,
+  } = input;
 
   const content = responseSnapshot.message;
 
@@ -111,6 +127,20 @@ export async function processInteraction(
         processedAt: new Date(),
       },
     });
+
+    if (channelPostEnabled) {
+      await retryChannelPost(
+        {
+          channelId: channelId!,
+          botToken: botToken!,
+          message: responseSnapshot.message,
+        },
+        {
+          deliverer: options.channelPost?.deliverer,
+          sleep: options.channelPost?.sleep,
+        }
+      );
+    }
   } else {
     const dbClient = options.client || prisma;
     await dbClient.actionRecord.updateMany({
