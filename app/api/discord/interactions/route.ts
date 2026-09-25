@@ -194,6 +194,12 @@ export async function POST(request: Request) {
         const interactionLog = persistResult.interactionLog;
 
         if (!persistResult.duplicate && interactionLog?.id) {
+          const discordResponseAction = interactionLog.actions?.find(
+            (a: any) => a.type === "DISCORD_RESPONSE"
+          );
+          const persistedMessage =
+            discordResponseAction?.result?.message ?? commandRule.responseText;
+
           const runPostResponse = async () => {
             try {
               await processInteraction({
@@ -203,7 +209,7 @@ export async function POST(request: Request) {
                 commandName,
                 reportText: parsed.options?.["text"],
                 responseSnapshot: {
-                  message: commandRule.responseText,
+                  message: persistedMessage,
                 },
               });
             } catch (err) {
