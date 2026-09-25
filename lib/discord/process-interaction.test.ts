@@ -394,4 +394,57 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(updatedArgs.data.attempts, 1);
     assert.ok(updatedArgs.data.completedAt instanceof Date);
   });
+
+  await t.test("12. Failed channel-post delivery persists CHANNEL_POST action as FAILED with attempts and lastError", async () => {
+    let updatedArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+      interactionLog: {
+        update: async () => ({}),
+      },
+    };
+
+    const cpDeliverer = async (_input: any): Promise<DeliveryResult> => {
+      return {
+        success: false,
+        category: "transient",
+        error: "Discord API channel post error: 500",
+      };
+    };
+
+    const input = {
+      ...baseInput,
+      channelPostEnabled: true,
+      channelId: "chan_123",
+      botToken: "bot_token_secret",
+    };
+
+    await processInteraction(input, {
+      deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+      sleep: async () => {},
+      client: mockClient,
+      channelPost: {
+        deliverer: cpDeliverer,
+        sleep: async () => {},
+      },
+    });
+
+    assert.notStrictEqual(updatedArgs, null);
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "CHANNEL_POST",
+    });
+    assert.strictEqual(updatedArgs.data.status, "FAILED");
+    assert.strictEqual(updatedArgs.data.attempts, 3);
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
+    assert.strictEqual(
+      updatedArgs.data.lastError,
+      "Discord API channel post error: 500"
+    );
+  });
 });

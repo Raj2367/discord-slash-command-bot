@@ -153,6 +153,20 @@ export async function processInteraction(
             completedAt: new Date(),
           },
         });
+      } else {
+        await dbClient.actionRecord.updateMany({
+          where: {
+            interactionLogId,
+            type: "CHANNEL_POST",
+          },
+          data: {
+            status: "FAILED",
+            attempts: channelPostResult.attempts,
+            completedAt: new Date(),
+            lastError:
+              channelPostResult.error || "Discord channel post delivery failed",
+          },
+        });
       }
     }
   } else {
