@@ -1,17 +1,17 @@
 import {
   deliverChannelPost,
   DeliverChannelPostInput,
-  ChannelPostDeliveryResult,
+  DeliveryResult,
 } from "./deliver-channel-post";
 
-export type RetriedChannelPostResult = ChannelPostDeliveryResult & {
+export type RetriedChannelPostResult = DeliveryResult & {
   attempts: number;
 };
 
 export interface RetryChannelPostOptions {
   deliverer?: (
     input: DeliverChannelPostInput
-  ) => Promise<ChannelPostDeliveryResult>;
+  ) => Promise<DeliveryResult>;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -28,7 +28,7 @@ export async function retryChannelPost(
   const maxAttempts = 3;
 
   let attempts = 0;
-  let lastResult: ChannelPostDeliveryResult = {
+  let lastResult: DeliveryResult = {
     success: false,
     category: "network",
     error: "No delivery attempts executed",

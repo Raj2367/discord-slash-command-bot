@@ -1,5 +1,7 @@
 import { DeliveryResult } from "./deliver-interaction-response";
 
+export type { DeliveryResult };
+
 export interface DeliverChannelPostInput {
   channelId: string;
   botToken: string;
