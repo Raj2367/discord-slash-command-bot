@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { ParsedInteraction } from "@/lib/discord/types";
+import { normalizeReportText } from "./normalize-report";
 
 export interface PersistInteractionInput {
   parsed: Extract<ParsedInteraction, { type: "APPLICATION_COMMAND" }>;
@@ -57,6 +58,19 @@ export async function persistInteraction(
     message: commandRule.responseText,
   };
 
+  let discordResponseSnapshot = outboundSnapshot;
+  if (commandName === "report") {
+    const reportText = parsed.options?.["text"];
+    if (reportText !== undefined) {
+      const normalized = normalizeReportText(reportText);
+      if (normalized.text) {
+        discordResponseSnapshot = {
+          message: `${commandRule.responseText}: ${normalized.text}`,
+        };
+      }
+    }
+  }
+
   try {
     const result = await client.$transaction(async (tx: any) => {
       const existing = await tx.interactionLog.findUnique({
@@ -73,7 +87,7 @@ export async function persistInteraction(
           type: "DISCORD_RESPONSE",
           status: "PENDING",
           attempts: 0,
-          result: outboundSnapshot,
+          result: discordResponseSnapshot,
         },
       ];
 

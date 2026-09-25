@@ -99,8 +99,13 @@ test("persistInteraction service tests", async (t) => {
     for (const act of result.interactionLog.actions) {
       assert.strictEqual(act.status, "PENDING");
       assert.strictEqual(act.attempts, 0);
-      assert.deepStrictEqual(act.result, { message: "Report received" });
     }
+    const discordAction = result.interactionLog.actions.find((a: any) => a.type === "DISCORD_RESPONSE");
+    assert.deepStrictEqual(discordAction.result, { message: "Report received: issue" });
+    const channelPost = result.interactionLog.actions.find((a: any) => a.type === "CHANNEL_POST");
+    assert.deepStrictEqual(channelPost.result, { message: "Report received" });
+    const mirror = result.interactionLog.actions.find((a: any) => a.type === "MIRROR");
+    assert.deepStrictEqual(mirror.result, { message: "Report received" });
   });
 
   await t.test("3. Duplicate interactionId returns duplicate result without creating new logs", async () => {
@@ -190,5 +195,141 @@ test("persistInteraction service tests", async (t) => {
     assert.strictEqual(result.success, true);
     assert.strictEqual(result.duplicate, true);
     assert.strictEqual(result.interactionLog.id, "log_p2002");
+  });
+
+  await t.test("5. /status persists the configured response message unchanged in DISCORD_RESPONSE", async () => {
+    let createdData: any = null;
+    const mockTx = {
+      interactionLog: {
+        findUnique: async () => null,
+        create: async (args: any) => {
+          createdData = args.data;
+          return {
+            id: "log_5",
+            ...args.data,
+            actions: args.data.actions.create.map((a: any, i: number) => ({
+              id: `act_${i}`,
+              ...a,
+            })),
+          };
+        },
+      },
+    };
+
+    const mockClient = {
+      $transaction: async (fn: any) => fn(mockTx),
+    };
+
+    const parsed: any = {
+      type: "APPLICATION_COMMAND",
+      id: "int_5",
+      applicationId: "app_123",
+      commandName: "status",
+      options: {},
+    };
+
+    const commandRule = {
+      responseText: "All systems nominal",
+      mirrorEnabled: false,
+      channelPostEnabled: false,
+    };
+
+    const result = await persistInteraction({ parsed, commandRule }, mockClient);
+
+    assert.strictEqual(result.interactionLog.actions.length, 1);
+    assert.strictEqual(result.interactionLog.actions[0].type, "DISCORD_RESPONSE");
+    assert.deepStrictEqual(result.interactionLog.actions[0].result, {
+      message: "All systems nominal",
+    });
+  });
+
+  await t.test("6. /report persists the normalized final message in DISCORD_RESPONSE", async () => {
+    let createdData: any = null;
+    const mockTx = {
+      interactionLog: {
+        findUnique: async () => null,
+        create: async (args: any) => {
+          createdData = args.data;
+          return {
+            id: "log_6",
+            ...args.data,
+            actions: args.data.actions.create.map((a: any, i: number) => ({
+              id: `act_${i}`,
+              ...a,
+            })),
+          };
+        },
+      },
+    };
+
+    const mockClient = {
+      $transaction: async (fn: any) => fn(mockTx),
+    };
+
+    const parsed: any = {
+      type: "APPLICATION_COMMAND",
+      id: "int_6",
+      applicationId: "app_123",
+      commandName: "report",
+      options: { text: "   server is on fire   " },
+    };
+
+    const commandRule = {
+      responseText: "Report logged",
+      mirrorEnabled: false,
+      channelPostEnabled: false,
+    };
+
+    const result = await persistInteraction({ parsed, commandRule }, mockClient);
+
+    assert.strictEqual(result.interactionLog.actions[0].type, "DISCORD_RESPONSE");
+    assert.deepStrictEqual(result.interactionLog.actions[0].result, {
+      message: "Report logged: server is on fire",
+    });
+  });
+
+  await t.test("7. /report with long text is bounded by the 1500-character limit", async () => {
+    let createdData: any = null;
+    const mockTx = {
+      interactionLog: {
+        findUnique: async () => null,
+        create: async (args: any) => {
+          createdData = args.data;
+          return {
+            id: "log_7",
+            ...args.data,
+            actions: args.data.actions.create.map((a: any, i: number) => ({
+              id: `act_${i}`,
+              ...a,
+            })),
+          };
+        },
+      },
+    };
+
+    const mockClient = {
+      $transaction: async (fn: any) => fn(mockTx),
+    };
+
+    const parsed: any = {
+      type: "APPLICATION_COMMAND",
+      id: "int_7",
+      applicationId: "app_123",
+      commandName: "report",
+      options: { text: "x".repeat(1600) },
+    };
+
+    const commandRule = {
+      responseText: "Report logged",
+      mirrorEnabled: false,
+      channelPostEnabled: false,
+    };
+
+    const result = await persistInteraction({ parsed, commandRule }, mockClient);
+
+    assert.strictEqual(result.interactionLog.actions[0].type, "DISCORD_RESPONSE");
+    const expectedMessage = `Report logged: ${"x".repeat(1500)}`;
+    assert.strictEqual(result.interactionLog.actions[0].result.message.length, expectedMessage.length);
+    assert.strictEqual(result.interactionLog.actions[0].result.message, expectedMessage);
   });
 });
