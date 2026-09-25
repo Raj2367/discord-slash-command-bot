@@ -25,7 +25,10 @@ test("processInteraction service tests", async (t) => {
     const result = await processInteraction(baseInput, {
       deliverer,
       sleep,
-      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+      client: {
+        actionRecord: { updateMany: async () => ({ count: 1 }) },
+        interactionLog: { update: async () => ({}) },
+      },
     });
 
     assert.strictEqual(result.deliveryResult.success, true);
@@ -48,7 +51,10 @@ test("processInteraction service tests", async (t) => {
     const result = await processInteraction(baseInput, {
       deliverer,
       sleep,
-      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+      client: {
+        actionRecord: { updateMany: async () => ({ count: 1 }) },
+        interactionLog: { update: async () => ({}) },
+      },
     });
 
     assert.strictEqual(result.deliveryResult.success, false);
@@ -74,7 +80,10 @@ test("processInteraction service tests", async (t) => {
     const result = await processInteraction(baseInput, {
       deliverer,
       sleep,
-      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+      client: {
+        actionRecord: { updateMany: async () => ({ count: 1 }) },
+        interactionLog: { update: async () => ({}) },
+      },
     });
 
     assert.strictEqual(result.deliveryResult.success, true);
@@ -91,7 +100,10 @@ test("processInteraction service tests", async (t) => {
     const result = await processInteraction(baseInput, {
       deliverer,
       sleep,
-      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+      client: {
+        actionRecord: { updateMany: async () => ({ count: 1 }) },
+        interactionLog: { update: async () => ({}) },
+      },
     });
 
     assert.strictEqual(result.deliveryResult.success, false);
@@ -119,7 +131,10 @@ test("processInteraction service tests", async (t) => {
     const result = await processInteraction(reportInput, {
       deliverer,
       sleep,
-      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+      client: {
+        actionRecord: { updateMany: async () => ({ count: 1 }) },
+        interactionLog: { update: async () => ({}) },
+      },
     });
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(result.attempts, 1);
@@ -137,18 +152,28 @@ test("processInteraction service tests", async (t) => {
     const longResult = await processInteraction(longInput, {
       deliverer,
       sleep,
-      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+      client: {
+        actionRecord: { updateMany: async () => ({ count: 1 }) },
+        interactionLog: { update: async () => ({}) },
+      },
     });
     assert.strictEqual(longResult.normalizedReportText?.length, 1500);
   });
 
-  await t.test("6. Successful delivery updates DISCORD_RESPONSE action to SUCCESS with attempts", async () => {
+  await t.test("6. Successful delivery updates DISCORD_RESPONSE action to SUCCESS with attempts and InteractionLog to COMPLETED", async () => {
     let updatedArgs: any = null;
+    let logUpdatedArgs: any = null;
     const mockClient = {
       actionRecord: {
         updateMany: async (args: any) => {
           updatedArgs = args;
           return { count: 1 };
+        },
+      },
+      interactionLog: {
+        update: async (args: any) => {
+          logUpdatedArgs = args;
+          return { id: "log_123" };
         },
       },
     };
@@ -176,15 +201,26 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(updatedArgs.data.status, "SUCCESS");
     assert.strictEqual(updatedArgs.data.attempts, 2);
     assert.ok(updatedArgs.data.completedAt instanceof Date);
+    assert.notStrictEqual(logUpdatedArgs, null);
+    assert.deepStrictEqual(logUpdatedArgs.where, { id: "log_123" });
+    assert.strictEqual(logUpdatedArgs.data.status, "COMPLETED");
+    assert.ok(logUpdatedArgs.data.processedAt instanceof Date);
   });
 
-  await t.test("7. Failed delivery updates DISCORD_RESPONSE action to FAILED with attempts and lastError", async () => {
+  await t.test("7. Failed delivery updates DISCORD_RESPONSE action to FAILED with attempts, lastError, and InteractionLog to FAILED", async () => {
     let updatedArgs: any = null;
+    let logUpdatedArgs: any = null;
     const mockClient = {
       actionRecord: {
         updateMany: async (args: any) => {
           updatedArgs = args;
           return { count: 1 };
+        },
+      },
+      interactionLog: {
+        update: async (args: any) => {
+          logUpdatedArgs = args;
+          return { id: "log_123" };
         },
       },
     };
@@ -208,5 +244,9 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(updatedArgs.data.attempts, 1);
     assert.strictEqual(updatedArgs.data.lastError, "Discord API permanent error: 400");
     assert.ok(updatedArgs.data.completedAt instanceof Date);
+    assert.notStrictEqual(logUpdatedArgs, null);
+    assert.deepStrictEqual(logUpdatedArgs.where, { id: "log_123" });
+    assert.strictEqual(logUpdatedArgs.data.status, "FAILED");
+    assert.ok(logUpdatedArgs.data.processedAt instanceof Date);
   });
 });

@@ -18,6 +18,15 @@ export interface ProcessInteractionClient {
       };
     }): Promise<unknown>;
   };
+  interactionLog: {
+    update(args: {
+      where: { id: string };
+      data: {
+        status: string;
+        processedAt: Date;
+      };
+    }): Promise<unknown>;
+  };
 }
 
 export interface ProcessInteractionInput {
@@ -84,6 +93,13 @@ export async function processInteraction(
         completedAt: new Date(),
       },
     });
+    await dbClient.interactionLog.update({
+      where: { id: interactionLogId },
+      data: {
+        status: "COMPLETED",
+        processedAt: new Date(),
+      },
+    });
   } else {
     const dbClient = options.client || prisma;
     await dbClient.actionRecord.updateMany({
@@ -96,6 +112,13 @@ export async function processInteraction(
         attempts: deliveryResult.attempts,
         completedAt: new Date(),
         lastError: deliveryResult.error || "Discord response delivery failed",
+      },
+    });
+    await dbClient.interactionLog.update({
+      where: { id: interactionLogId },
+      data: {
+        status: "FAILED",
+        processedAt: new Date(),
       },
     });
   }
