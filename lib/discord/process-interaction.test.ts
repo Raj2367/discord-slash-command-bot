@@ -876,4 +876,106 @@ test("processInteraction service tests", async (t) => {
     assert.ok(mirrorArgs.data.completedAt instanceof Date);
     assert.strictEqual(mirrorArgs.data.lastError, "mirror boom");
   });
+
+  await t.test("23. Enabled MIRROR with undefined mirrorType marks MIRROR FAILED without calling deliverer", async () => {
+    let mirrorCalls = 0;
+    const mirrorDeliverer = async (): Promise<DeliveryResult> => {
+      mirrorCalls++;
+      return { success: true };
+    };
+    let mirrorArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          if (args.where.type === "MIRROR") {
+            mirrorArgs = args;
+          }
+          return { count: 1 };
+        },
+      },
+      interactionLog: { update: async () => ({}) },
+    };
+
+    await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/123/token",
+        mirrorType: undefined,
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: mockClient,
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(mirrorCalls, 0);
+    assert.deepStrictEqual(mirrorArgs.where, {
+      interactionLogId: "log_123",
+      type: "MIRROR",
+    });
+    assert.strictEqual(mirrorArgs.data.status, "FAILED");
+    assert.strictEqual(mirrorArgs.data.attempts, 0);
+    assert.ok(mirrorArgs.data.completedAt instanceof Date);
+    assert.strictEqual(
+      mirrorArgs.data.lastError,
+      "Discord mirror is not configured"
+    );
+  });
+
+  await t.test("24. Enabled MIRROR with unsupported mirrorType marks MIRROR FAILED without calling deliverer", async () => {
+    let mirrorCalls = 0;
+    const mirrorDeliverer = async (): Promise<DeliveryResult> => {
+      mirrorCalls++;
+      return { success: true };
+    };
+    let mirrorArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          if (args.where.type === "MIRROR") {
+            mirrorArgs = args;
+          }
+          return { count: 1 };
+        },
+      },
+      interactionLog: { update: async () => ({}) },
+    };
+
+    await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: "https://hooks.slack.com/services/x/y/z",
+        mirrorType: "SLACK_WEBHOOK",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: mockClient,
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(mirrorCalls, 0);
+    assert.deepStrictEqual(mirrorArgs.where, {
+      interactionLogId: "log_123",
+      type: "MIRROR",
+    });
+    assert.strictEqual(mirrorArgs.data.status, "FAILED");
+    assert.strictEqual(mirrorArgs.data.attempts, 0);
+    assert.ok(mirrorArgs.data.completedAt instanceof Date);
+    assert.strictEqual(
+      mirrorArgs.data.lastError,
+      "Discord mirror is not configured"
+    );
+  });
 });

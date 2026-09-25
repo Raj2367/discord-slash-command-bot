@@ -211,10 +211,23 @@ export async function processInteraction(
       }
     }
 
-    if (mirrorEnabled && mirrorType === "DISCORD_WEBHOOK") {
+    if (mirrorEnabled) {
       const dbClient = options.client || prisma;
 
-      if (!mirrorWebhookUrl) {
+      if (mirrorType !== "DISCORD_WEBHOOK") {
+        await dbClient.actionRecord.updateMany({
+          where: {
+            interactionLogId,
+            type: "MIRROR",
+          },
+          data: {
+            status: "FAILED",
+            attempts: 0,
+            completedAt: new Date(),
+            lastError: "Discord mirror is not configured",
+          },
+        });
+      } else if (!mirrorWebhookUrl) {
         await dbClient.actionRecord.updateMany({
           where: {
             interactionLogId,
