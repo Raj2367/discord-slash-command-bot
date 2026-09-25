@@ -108,7 +108,7 @@ test("persistInteraction service tests", async (t) => {
     });
     assert.deepStrictEqual(channelPost.result, discordAction.result);
     const mirror = result.interactionLog.actions.find((a: any) => a.type === "MIRROR");
-    assert.deepStrictEqual(mirror.result, { message: "Report received" });
+    assert.deepStrictEqual(mirror.result, { message: "Report received: issue" });
   });
 
   await t.test("3. Duplicate interactionId returns duplicate result without creating new logs", async () => {

@@ -105,7 +105,7 @@ export async function persistInteraction(
           type: "MIRROR",
           status: "PENDING",
           attempts: 0,
-          result: outboundSnapshot,
+          result: discordResponseSnapshot,
         });
       }
 
