@@ -129,6 +129,20 @@ export async function processInteraction(
     });
 
     if (channelPostEnabled) {
+      if (!channelId || !botToken) {
+        await dbClient.actionRecord.updateMany({
+          where: {
+            interactionLogId,
+            type: "CHANNEL_POST",
+          },
+          data: {
+            status: "FAILED",
+            attempts: 0,
+            completedAt: new Date(),
+            lastError: "Discord channel post is not configured",
+          },
+        });
+      } else {
       const channelPostResult = await retryChannelPost(
         {
           channelId: channelId!,
@@ -167,6 +181,7 @@ export async function processInteraction(
               channelPostResult.error || "Discord channel post delivery failed",
           },
         });
+      }
       }
     }
   } else {

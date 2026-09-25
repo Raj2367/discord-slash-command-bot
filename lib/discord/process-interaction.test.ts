@@ -447,4 +447,55 @@ test("processInteraction service tests", async (t) => {
       "Discord API channel post error: 500"
     );
   });
+
+  await t.test("13. Missing channel post configuration marks CHANNEL_POST FAILED without calling deliverer", async () => {
+    let cpCalled = false;
+    const cpDeliverer = async (_input: any): Promise<DeliveryResult> => {
+      cpCalled = true;
+      return { success: true };
+    };
+
+    let updatedArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+      interactionLog: {
+        update: async () => ({}),
+      },
+    };
+
+    const input = {
+      ...baseInput,
+      channelPostEnabled: true,
+      botToken: "bot_token_secret",
+    };
+
+    await processInteraction(input, {
+      deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+      sleep: async () => {},
+      client: mockClient,
+      channelPost: {
+        deliverer: cpDeliverer,
+        sleep: async () => {},
+      },
+    });
+
+    assert.strictEqual(cpCalled, false);
+    assert.notStrictEqual(updatedArgs, null);
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "CHANNEL_POST",
+    });
+    assert.strictEqual(updatedArgs.data.status, "FAILED");
+    assert.strictEqual(updatedArgs.data.attempts, 0);
+    assert.strictEqual(
+      updatedArgs.data.lastError,
+      "Discord channel post is not configured"
+    );
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
+  });
 });
