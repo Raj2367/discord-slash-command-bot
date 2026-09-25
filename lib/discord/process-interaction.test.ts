@@ -776,4 +776,54 @@ test("processInteraction service tests", async (t) => {
       "Discord mirror is not configured"
     );
   });
+
+  await t.test("21. Unexpected throw from retryChannelPost marks CHANNEL_POST FAILED with attempts 0 and the thrown error message", async () => {
+    let channelPostArgs: any = null;
+    let channelPostCalls = 0;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          if (args.where.type === "CHANNEL_POST") {
+            channelPostCalls++;
+            channelPostArgs = args;
+          }
+          return { count: 1 };
+        },
+      },
+      interactionLog: { update: async () => ({}) },
+    };
+
+    const channelPostDeliverer = async (): Promise<DeliveryResult> => {
+      throw new Error("channel post boom");
+    };
+
+    const result = await processInteraction(
+      {
+        ...baseInput,
+        channelPostEnabled: true,
+        channelId: "chan_123",
+        botToken: "bot_token_secret",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: mockClient,
+        channelPost: {
+          deliverer: channelPostDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(result.deliveryResult.success, true);
+    assert.strictEqual(channelPostCalls, 1);
+    assert.deepStrictEqual(channelPostArgs.where, {
+      interactionLogId: "log_123",
+      type: "CHANNEL_POST",
+    });
+    assert.strictEqual(channelPostArgs.data.status, "FAILED");
+    assert.strictEqual(channelPostArgs.data.attempts, 0);
+    assert.ok(channelPostArgs.data.completedAt instanceof Date);
+    assert.strictEqual(channelPostArgs.data.lastError, "channel post boom");
+  });
 });

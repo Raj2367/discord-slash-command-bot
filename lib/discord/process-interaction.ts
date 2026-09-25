@@ -151,45 +151,63 @@ export async function processInteraction(
           },
         });
       } else {
-      const channelPostResult = await retryChannelPost(
-        {
-          channelId: channelId!,
-          botToken: botToken!,
-          message: responseSnapshot.message,
-        },
-        {
-          deliverer: options.channelPost?.deliverer,
-          sleep: options.channelPost?.sleep,
-        }
-      );
+        try {
+          const channelPostResult = await retryChannelPost(
+            {
+              channelId: channelId!,
+              botToken: botToken!,
+              message: responseSnapshot.message,
+            },
+            {
+              deliverer: options.channelPost?.deliverer,
+              sleep: options.channelPost?.sleep,
+            }
+          );
 
-      if (channelPostResult.success) {
-        await dbClient.actionRecord.updateMany({
-          where: {
-            interactionLogId,
-            type: "CHANNEL_POST",
-          },
-          data: {
-            status: "SUCCESS",
-            attempts: channelPostResult.attempts,
-            completedAt: new Date(),
-          },
-        });
-      } else {
-        await dbClient.actionRecord.updateMany({
-          where: {
-            interactionLogId,
-            type: "CHANNEL_POST",
-          },
-          data: {
-            status: "FAILED",
-            attempts: channelPostResult.attempts,
-            completedAt: new Date(),
-            lastError:
-              channelPostResult.error || "Discord channel post delivery failed",
-          },
-        });
-      }
+          if (channelPostResult.success) {
+            await dbClient.actionRecord.updateMany({
+              where: {
+                interactionLogId,
+                type: "CHANNEL_POST",
+              },
+              data: {
+                status: "SUCCESS",
+                attempts: channelPostResult.attempts,
+                completedAt: new Date(),
+              },
+            });
+          } else {
+            await dbClient.actionRecord.updateMany({
+              where: {
+                interactionLogId,
+                type: "CHANNEL_POST",
+              },
+              data: {
+                status: "FAILED",
+                attempts: channelPostResult.attempts,
+                completedAt: new Date(),
+                lastError:
+                  channelPostResult.error || "Discord channel post delivery failed",
+              },
+            });
+          }
+        } catch (err) {
+          await dbClient.actionRecord.updateMany({
+            where: {
+              interactionLogId,
+              type: "CHANNEL_POST",
+            },
+            data: {
+              status: "FAILED",
+              attempts: 0,
+              completedAt: new Date(),
+              lastError:
+                err instanceof Error
+                  ? err.message
+                  : "Channel post processing failed",
+            },
+          });
+        }
       }
     }
 
