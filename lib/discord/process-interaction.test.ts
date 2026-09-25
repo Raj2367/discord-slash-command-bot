@@ -28,7 +28,10 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(result.attempts, 1);
     assert.strictEqual(capturedInput.applicationId, "app_123");
     assert.strictEqual(capturedInput.interactionToken, "secret_token_xyz");
-    assert.deepStrictEqual(capturedInput.payload, { content: "System is healthy" });
+    assert.deepStrictEqual(capturedInput.payload, {
+      content: "System is healthy",
+      allowed_mentions: { parse: [] },
+    });
   });
 
   await t.test("2. Permanent failure is returned unchanged with correct attempts", async () => {
@@ -82,7 +85,7 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(result.attempts, 3);
   });
 
-  await t.test("5. reportText input is normalized at boundary including trimming and 1500-char limit", async () => {
+  await t.test("5. reportText input is normalized at boundary and used in payload with allowed_mentions", async () => {
     let capturedInput: any = null;
     const deliverer = async (input: any): Promise<DeliveryResult> => {
       capturedInput = input;
@@ -94,13 +97,17 @@ test("processInteraction service tests", async (t) => {
       ...baseInput,
       commandName: "report",
       reportText: "   Server issue report   ",
+      responseSnapshot: { message: "Report logged" },
     };
 
     const result = await processInteraction(reportInput, { deliverer, sleep });
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(result.attempts, 1);
     assert.strictEqual(result.normalizedReportText, "Server issue report");
-    assert.deepStrictEqual(capturedInput.payload, { content: "System is healthy" });
+    assert.deepStrictEqual(capturedInput.payload, {
+      content: "Report logged: Server issue report",
+      allowed_mentions: { parse: [] },
+    });
 
     const longInput = {
       ...baseInput,

@@ -35,8 +35,16 @@ export async function processInteraction(
     normalizedReportText = normalized.text;
   }
 
+  const content =
+    commandName === "report" && normalizedReportText
+      ? `${responseSnapshot.message}: ${normalizedReportText}`
+      : responseSnapshot.message;
+
   const payload = {
-    content: responseSnapshot.message,
+    content,
+    allowed_mentions: {
+      parse: [],
+    },
   };
 
   const deliveryResult = await retryDiscordDelivery(
