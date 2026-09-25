@@ -59,10 +59,7 @@ export async function processInteraction(
     normalizedReportText = normalized.text;
   }
 
-  const content =
-    commandName === "report" && normalizedReportText
-      ? `${responseSnapshot.message}: ${normalizedReportText}`
-      : responseSnapshot.message;
+  const content = responseSnapshot.message;
 
   const payload = {
     content,
