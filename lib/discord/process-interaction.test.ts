@@ -137,7 +137,6 @@ test("processInteraction service tests", async (t) => {
     });
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(result.attempts, 1);
-    assert.strictEqual(result.normalizedReportText, undefined);
     assert.deepStrictEqual(capturedInput.payload, {
       content: "Report logged",
       allowed_mentions: { parse: [] },

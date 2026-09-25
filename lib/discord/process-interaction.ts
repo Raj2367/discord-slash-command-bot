@@ -42,7 +42,6 @@ export interface ProcessInteractionInput {
 export interface ProcessInteractionResult {
   deliveryResult: RetriedDeliveryResult;
   attempts: number;
-  normalizedReportText?: string;
 }
 
 export async function processInteraction(
@@ -138,6 +137,5 @@ export async function processInteraction(
   return {
     deliveryResult,
     attempts: deliveryResult.attempts,
-    normalizedReportText: undefined,
   };
 }
