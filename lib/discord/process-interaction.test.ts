@@ -249,4 +249,49 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(logUpdatedArgs.data.status, "FAILED");
     assert.ok(logUpdatedArgs.data.processedAt instanceof Date);
   });
+
+  await t.test("8. Unexpected throw from retry delivery marks DISCORD_RESPONSE FAILED and InteractionLog FAILED, then re-throws", async () => {
+    let updatedArgs: any = null;
+    let logUpdatedArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+      interactionLog: {
+        update: async (args: any) => {
+          logUpdatedArgs = args;
+          return { id: "log_123" };
+        },
+      },
+    };
+
+    const thrown = new Error("inject: network blew up");
+    const deliverer = async (): Promise<DeliveryResult> => {
+      throw thrown;
+    };
+
+    const sleep = async () => {};
+
+    await assert.rejects(
+      processInteraction(baseInput, { deliverer, sleep, client: mockClient }),
+      (err) => err === thrown
+    );
+
+    assert.notStrictEqual(updatedArgs, null);
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "DISCORD_RESPONSE",
+    });
+    assert.strictEqual(updatedArgs.data.status, "FAILED");
+    assert.strictEqual(updatedArgs.data.attempts, 0);
+    assert.strictEqual(updatedArgs.data.lastError, "Discord response processing failed");
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
+    assert.notStrictEqual(logUpdatedArgs, null);
+    assert.deepStrictEqual(logUpdatedArgs.where, { id: "log_123" });
+    assert.strictEqual(logUpdatedArgs.data.status, "FAILED");
+    assert.ok(logUpdatedArgs.data.processedAt instanceof Date);
+  });
 });

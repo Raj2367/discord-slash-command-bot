@@ -71,14 +71,37 @@ export async function processInteraction(
     },
   };
 
-  const deliveryResult = await retryDiscordDelivery(
-    {
-      applicationId,
-      interactionToken,
-      payload,
-    },
-    options
-  );
+  let deliveryResult: RetriedDeliveryResult;
+
+  try {
+    deliveryResult = await retryDiscordDelivery(
+      {
+        applicationId,
+        interactionToken,
+        payload,
+      },
+      options
+    );
+  } catch (err) {
+    const dbClient = options.client || prisma;
+    await dbClient.actionRecord.updateMany({
+      where: { interactionLogId, type: "DISCORD_RESPONSE" },
+      data: {
+        status: "FAILED",
+        attempts: 0,
+        completedAt: new Date(),
+        lastError: "Discord response processing failed",
+      },
+    });
+    await dbClient.interactionLog.update({
+      where: { id: interactionLogId },
+      data: {
+        status: "FAILED",
+        processedAt: new Date(),
+      },
+    });
+    throw err;
+  }
 
   if (deliveryResult.success) {
     const dbClient = options.client || prisma;
