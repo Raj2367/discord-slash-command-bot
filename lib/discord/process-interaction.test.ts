@@ -826,4 +826,54 @@ test("processInteraction service tests", async (t) => {
     assert.ok(channelPostArgs.data.completedAt instanceof Date);
     assert.strictEqual(channelPostArgs.data.lastError, "channel post boom");
   });
+
+  await t.test("22. Unexpected throw from retryMirror marks MIRROR FAILED with attempts 0 and the thrown error message", async () => {
+    let mirrorArgs: any = null;
+    let mirrorCalls = 0;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          if (args.where.type === "MIRROR") {
+            mirrorCalls++;
+            mirrorArgs = args;
+          }
+          return { count: 1 };
+        },
+      },
+      interactionLog: { update: async () => ({}) },
+    };
+
+    const mirrorDeliverer = async (): Promise<DeliveryResult> => {
+      throw new Error("mirror boom");
+    };
+
+    const result = await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/123/token",
+        mirrorType: "DISCORD_WEBHOOK",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: mockClient,
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(result.deliveryResult.success, true);
+    assert.strictEqual(mirrorCalls, 1);
+    assert.deepStrictEqual(mirrorArgs.where, {
+      interactionLogId: "log_123",
+      type: "MIRROR",
+    });
+    assert.strictEqual(mirrorArgs.data.status, "FAILED");
+    assert.strictEqual(mirrorArgs.data.attempts, 0);
+    assert.ok(mirrorArgs.data.completedAt instanceof Date);
+    assert.strictEqual(mirrorArgs.data.lastError, "mirror boom");
+  });
 });
