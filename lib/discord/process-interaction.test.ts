@@ -727,4 +727,53 @@ test("processInteraction service tests", async (t) => {
       "Discord API transient error: 503"
     );
   });
+
+  await t.test("20. Missing mirror webhook URL marks MIRROR FAILED without calling deliverer", async () => {
+    let mirrorCalls = 0;
+    const mirrorDeliverer = async (): Promise<DeliveryResult> => {
+      mirrorCalls++;
+      return { success: true };
+    };
+    let updatedArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+      interactionLog: { update: async () => ({}) },
+    };
+
+    await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: undefined,
+        mirrorType: "DISCORD_WEBHOOK",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: mockClient,
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(mirrorCalls, 0);
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "MIRROR",
+    });
+    assert.strictEqual(updatedArgs.data.status, "FAILED");
+    assert.strictEqual(updatedArgs.data.attempts, 0);
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
+    assert.strictEqual(
+      updatedArgs.data.lastError,
+      "Discord mirror is not configured"
+    );
+  });
 });

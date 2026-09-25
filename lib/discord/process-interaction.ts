@@ -194,32 +194,9 @@ export async function processInteraction(
     }
 
     if (mirrorEnabled && mirrorType === "DISCORD_WEBHOOK") {
-      const mirrorResult = await retryMirror(
-        {
-          webhookUrl: mirrorWebhookUrl!,
-          message: responseSnapshot.message,
-        },
-        {
-          deliverer: options.mirror?.deliverer,
-          sleep: options.mirror?.sleep,
-        }
-      );
+      const dbClient = options.client || prisma;
 
-      if (mirrorResult.success) {
-        const dbClient = options.client || prisma;
-        await dbClient.actionRecord.updateMany({
-          where: {
-            interactionLogId,
-            type: "MIRROR",
-          },
-          data: {
-            status: "SUCCESS",
-            attempts: mirrorResult.attempts,
-            completedAt: new Date(),
-          },
-        });
-      } else {
-        const dbClient = options.client || prisma;
+      if (!mirrorWebhookUrl) {
         await dbClient.actionRecord.updateMany({
           where: {
             interactionLogId,
@@ -227,11 +204,51 @@ export async function processInteraction(
           },
           data: {
             status: "FAILED",
-            attempts: mirrorResult.attempts,
+            attempts: 0,
             completedAt: new Date(),
-            lastError: mirrorResult.error || "Discord mirror delivery failed",
+            lastError: "Discord mirror is not configured",
           },
         });
+      } else {
+        const mirrorResult = await retryMirror(
+          {
+            webhookUrl: mirrorWebhookUrl!,
+            message: responseSnapshot.message,
+          },
+          {
+            deliverer: options.mirror?.deliverer,
+            sleep: options.mirror?.sleep,
+          }
+        );
+
+        if (mirrorResult.success) {
+          const dbClient = options.client || prisma;
+          await dbClient.actionRecord.updateMany({
+            where: {
+              interactionLogId,
+              type: "MIRROR",
+            },
+            data: {
+              status: "SUCCESS",
+              attempts: mirrorResult.attempts,
+              completedAt: new Date(),
+            },
+          });
+        } else {
+          const dbClient = options.client || prisma;
+          await dbClient.actionRecord.updateMany({
+            where: {
+              interactionLogId,
+              type: "MIRROR",
+            },
+            data: {
+              status: "FAILED",
+              attempts: mirrorResult.attempts,
+              completedAt: new Date(),
+              lastError: mirrorResult.error || "Discord mirror delivery failed",
+            },
+          });
+        }
       }
     }
   } else {
