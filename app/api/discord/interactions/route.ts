@@ -201,6 +201,7 @@ export async function POST(request: Request) {
                 applicationId: config.applicationId,
                 interactionToken: parsed.token!,
                 commandName,
+                reportText: parsed.options?.["text"],
                 responseSnapshot: {
                   message: commandRule.responseText,
                 },
