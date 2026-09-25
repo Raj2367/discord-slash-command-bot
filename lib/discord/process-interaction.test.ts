@@ -81,4 +81,23 @@ test("processInteraction service tests", async (t) => {
     }
     assert.strictEqual(result.attempts, 3);
   });
+
+  await t.test("5. reportText input is accepted and passed through", async () => {
+    let capturedInput: any = null;
+    const deliverer = async (input: any): Promise<DeliveryResult> => {
+      capturedInput = input;
+      return { success: true };
+    };
+    const sleep = async () => {};
+
+    const reportInput = {
+      ...baseInput,
+      commandName: "report",
+      reportText: "Server issue report",
+    };
+
+    const result = await processInteraction(reportInput, { deliverer, sleep });
+    assert.strictEqual(result.deliveryResult.success, true);
+    assert.strictEqual(result.attempts, 1);
+  });
 });

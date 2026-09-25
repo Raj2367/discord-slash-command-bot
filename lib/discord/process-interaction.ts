@@ -9,6 +9,7 @@ export interface ProcessInteractionInput {
   applicationId: string;
   interactionToken: string;
   commandName: string;
+  reportText?: string;
   responseSnapshot: {
     message: string;
     [key: string]: any;
