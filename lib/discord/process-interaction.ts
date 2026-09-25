@@ -10,7 +10,7 @@ import { prisma } from "@/lib/db";
 export interface ProcessInteractionClient {
   actionRecord: {
     updateMany(args: {
-      where: { interactionLogId: string; type: "DISCORD_RESPONSE" | "CHANNEL_POST" };
+      where: { interactionLogId: string; type: "DISCORD_RESPONSE" | "CHANNEL_POST" | "MIRROR" };
       data: {
         status: string;
         attempts: number;
@@ -194,7 +194,7 @@ export async function processInteraction(
     }
 
     if (mirrorEnabled && mirrorType === "DISCORD_WEBHOOK") {
-      await retryMirror(
+      const mirrorResult = await retryMirror(
         {
           webhookUrl: mirrorWebhookUrl!,
           message: responseSnapshot.message,
@@ -204,6 +204,21 @@ export async function processInteraction(
           sleep: options.mirror?.sleep,
         }
       );
+
+      if (mirrorResult.success) {
+        const dbClient = options.client || prisma;
+        await dbClient.actionRecord.updateMany({
+          where: {
+            interactionLogId,
+            type: "MIRROR",
+          },
+          data: {
+            status: "SUCCESS",
+            attempts: mirrorResult.attempts,
+            completedAt: new Date(),
+          },
+        });
+      }
     }
   } else {
     const dbClient = options.client || prisma;

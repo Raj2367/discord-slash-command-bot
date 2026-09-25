@@ -520,6 +520,10 @@ test("processInteraction service tests", async (t) => {
           actionRecord: { updateMany: async () => ({ count: 1 }) },
           interactionLog: { update: async () => ({}) },
         },
+        mirror: {
+          deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+          sleep: async () => {},
+        },
       }
     );
 
@@ -622,6 +626,55 @@ test("processInteraction service tests", async (t) => {
       }
     );
 
-    assert.strictEqual(mirrorCalls, 0);
+     assert.strictEqual(mirrorCalls, 0);
+   });
+
+  await t.test("18. MIRROR success updates the MIRROR ActionRecord to SUCCESS with attempts and completedAt", async () => {
+    let updatedArgs: any = null;
+    let updateCount = 0;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updateCount++;
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+      interactionLog: { update: async () => ({}) },
+    };
+
+    let mirrorCalls = 0;
+    const mirrorDeliverer = async (): Promise<DeliveryResult> => {
+      mirrorCalls++;
+      return { success: true };
+    };
+
+    await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/123/token",
+        mirrorType: "DISCORD_WEBHOOK",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: mockClient,
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(mirrorCalls, 1);
+    assert.strictEqual(updateCount, 2);
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "MIRROR",
+    });
+    assert.strictEqual(updatedArgs.data.status, "SUCCESS");
+    assert.strictEqual(updatedArgs.data.attempts, 1);
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
   });
 });
