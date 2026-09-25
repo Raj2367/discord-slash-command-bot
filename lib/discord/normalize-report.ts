@@ -41,18 +41,3 @@ export function formatDiscordReportPayload(text: string) {
     },
   };
 }
-
-export function escapeSlackMrkdwn(normalizedText: string): string {
-  return (normalizedText || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-export function formatSlackReportPayload(normalizedText: string) {
-  const escaped = escapeSlackMrkdwn(normalizedText);
-  return {
-    text: `*Report:* ${escaped}`,
-    mrkdwn: true,
-  };
-}
