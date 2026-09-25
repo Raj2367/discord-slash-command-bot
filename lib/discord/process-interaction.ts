@@ -40,11 +40,11 @@ export interface ProcessInteractionInput {
     [key: string]: any;
   };
   channelPostEnabled?: boolean;
-  channelId?: string;
+  channelId?: string | null;
   botToken?: string;
   mirrorEnabled?: boolean;
-  mirrorWebhookUrl?: string;
-  mirrorType?: string;
+  mirrorWebhookUrl?: string | null;
+  mirrorType?: string | null;
 }
 
 export interface ProcessInteractionResult {
