@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { after } from "@/lib/discord/after";
 import { getDiscordConfig } from "@/lib/discord/config";
 import { verifyDiscordSignature } from "@/lib/discord/verify-signature";
 import { validateTimestamp } from "@/lib/discord/validate-timestamp";
 import { parseInteraction } from "@/lib/discord/parse-interaction";
 import { persistInteraction } from "@/lib/discord/persist-interaction";
+import { processInteraction } from "@/lib/discord/process-interaction";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -179,7 +181,7 @@ export async function POST(request: Request) {
 
       // Enabled and configured command: persist via persistInteraction
       try {
-        await persistInteraction({
+        const persistResult = await persistInteraction({
           parsed,
           raw: rawJson,
           commandRule: {
@@ -188,6 +190,28 @@ export async function POST(request: Request) {
             channelPostEnabled: commandRule.channelPostEnabled,
           },
         });
+
+        const interactionLog = persistResult.interactionLog;
+
+        if (!persistResult.duplicate && interactionLog?.id) {
+          const runPostResponse = async () => {
+            try {
+              await processInteraction({
+                interactionLogId: interactionLog.id,
+                applicationId: config.applicationId,
+                interactionToken: parsed.token!,
+                commandName,
+                responseSnapshot: {
+                  message: commandRule.responseText,
+                },
+              });
+            } catch (err) {
+              console.error("Error in post-response processInteraction:", err);
+            }
+          };
+
+          after(runPostResponse);
+        }
 
         // Return deferred response { type: 5 } for both new and duplicate interactions
         return NextResponse.json({ type: 5 }, { status: 200 });
