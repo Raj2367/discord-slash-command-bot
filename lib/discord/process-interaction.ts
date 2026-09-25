@@ -218,6 +218,20 @@ export async function processInteraction(
             completedAt: new Date(),
           },
         });
+      } else {
+        const dbClient = options.client || prisma;
+        await dbClient.actionRecord.updateMany({
+          where: {
+            interactionLogId,
+            type: "MIRROR",
+          },
+          data: {
+            status: "FAILED",
+            attempts: mirrorResult.attempts,
+            completedAt: new Date(),
+            lastError: mirrorResult.error || "Discord mirror delivery failed",
+          },
+        });
       }
     }
   } else {

@@ -677,4 +677,54 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(updatedArgs.data.attempts, 1);
     assert.ok(updatedArgs.data.completedAt instanceof Date);
   });
+
+  await t.test("19. MIRROR failure updates the MIRROR ActionRecord to FAILED with attempts, completedAt, and lastError", async () => {
+    let updatedArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+      interactionLog: { update: async () => ({}) },
+    };
+
+    const mirrorDeliverer = async (): Promise<DeliveryResult> => ({
+      success: false,
+      category: "transient",
+      status: 503,
+      error: "Discord API transient error: 503",
+    });
+
+    await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/123/token",
+        mirrorType: "DISCORD_WEBHOOK",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: mockClient,
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "MIRROR",
+    });
+    assert.strictEqual(updatedArgs.data.status, "FAILED");
+    assert.strictEqual(updatedArgs.data.attempts, 3);
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
+    assert.strictEqual(
+      updatedArgs.data.lastError,
+      "Discord API transient error: 503"
+    );
+  });
 });
