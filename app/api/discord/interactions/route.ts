@@ -213,6 +213,9 @@ export async function POST(request: Request) {
                 channelPostEnabled: commandRule.channelPostEnabled,
                 channelId: serverConfig?.channelId,
                 botToken: process.env.DISCORD_BOT_TOKEN,
+                mirrorEnabled: commandRule.mirrorEnabled,
+                mirrorWebhookUrl: serverConfig?.mirrorWebhookUrl,
+                mirrorType: serverConfig?.mirrorType,
               });
             } catch (err) {
               console.error("Error in post-response processInteraction:", err);
