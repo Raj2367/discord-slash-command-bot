@@ -45,7 +45,11 @@ test("processInteraction service tests", async (t) => {
 
     const sleep = async () => {};
 
-    const result = await processInteraction(baseInput, { deliverer, sleep });
+    const result = await processInteraction(baseInput, {
+      deliverer,
+      sleep,
+      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+    });
 
     assert.strictEqual(result.deliveryResult.success, false);
     if (!result.deliveryResult.success) {
@@ -84,7 +88,11 @@ test("processInteraction service tests", async (t) => {
 
     const sleep = async () => {};
 
-    const result = await processInteraction(baseInput, { deliverer, sleep });
+    const result = await processInteraction(baseInput, {
+      deliverer,
+      sleep,
+      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+    });
 
     assert.strictEqual(result.deliveryResult.success, false);
     if (!result.deliveryResult.success) {
@@ -167,6 +175,38 @@ test("processInteraction service tests", async (t) => {
     });
     assert.strictEqual(updatedArgs.data.status, "SUCCESS");
     assert.strictEqual(updatedArgs.data.attempts, 2);
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
+  });
+
+  await t.test("7. Failed delivery updates DISCORD_RESPONSE action to FAILED with attempts and lastError", async () => {
+    let updatedArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+    };
+
+    const deliverer = async (): Promise<DeliveryResult> => {
+      return { success: false, category: "permanent", status: 400, error: "Discord API permanent error: 400" };
+    };
+
+    const sleep = async () => {};
+
+    const result = await processInteraction(baseInput, { deliverer, sleep, client: mockClient });
+
+    assert.strictEqual(result.deliveryResult.success, false);
+    assert.strictEqual(result.attempts, 1);
+    assert.notStrictEqual(updatedArgs, null);
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "DISCORD_RESPONSE",
+    });
+    assert.strictEqual(updatedArgs.data.status, "FAILED");
+    assert.strictEqual(updatedArgs.data.attempts, 1);
+    assert.strictEqual(updatedArgs.data.lastError, "Discord API permanent error: 400");
     assert.ok(updatedArgs.data.completedAt instanceof Date);
   });
 });

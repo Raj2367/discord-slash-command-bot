@@ -10,7 +10,12 @@ export interface ProcessInteractionClient {
   actionRecord: {
     updateMany(args: {
       where: { interactionLogId: string; type: "DISCORD_RESPONSE" };
-      data: { status: string; attempts: number; completedAt: Date };
+      data: {
+        status: string;
+        attempts: number;
+        completedAt: Date;
+        lastError?: string | null;
+      };
     }): Promise<unknown>;
   };
 }
@@ -77,6 +82,20 @@ export async function processInteraction(
         status: "SUCCESS",
         attempts: deliveryResult.attempts,
         completedAt: new Date(),
+      },
+    });
+  } else {
+    const dbClient = options.client || prisma;
+    await dbClient.actionRecord.updateMany({
+      where: {
+        interactionLogId,
+        type: "DISCORD_RESPONSE",
+      },
+      data: {
+        status: "FAILED",
+        attempts: deliveryResult.attempts,
+        completedAt: new Date(),
+        lastError: deliveryResult.error || "Discord response delivery failed",
       },
     });
   }
