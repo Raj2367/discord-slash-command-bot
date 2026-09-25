@@ -56,8 +56,32 @@ export async function POST(request: Request) {
     );
   }
 
+  const staleCutoff = new Date(Date.now() - STALE_PENDING_MS);
+  const claimResult = await prisma.actionRecord.updateMany({
+    where: {
+      id: actionId,
+      OR: [
+        { status: "FAILED" },
+        { status: "PENDING", updatedAt: { lt: staleCutoff } },
+      ],
+    },
+    data: {
+      status: "PENDING",
+      attempts: 0,
+      completedAt: null,
+      lastError: null,
+    },
+  });
+
+  if (claimResult.count === 1) {
+    return NextResponse.json(
+      { eligible: true, claimed: true, actionId, type: action.type },
+      { status: 200 }
+    );
+  }
+
   return NextResponse.json(
-    { eligible: true, actionId, type: action.type },
-    { status: 200 }
+    { eligible: false, actionId, type: action.type },
+    { status: 409 }
   );
 }
