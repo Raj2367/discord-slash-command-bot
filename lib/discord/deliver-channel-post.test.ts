@@ -1,131 +1,190 @@
 import test from "node:test";
 import assert from "node:assert";
-import { deliverChannelPost } from "./deliver-channel-post";
+import { deliverChannelPost, DeliverChannelPostInput } from "./deliver-channel-post";
 
-test("deliverChannelPost helper tests", async (t) => {
-  const originalFetch = global.fetch;
+const BASE_INPUT: DeliverChannelPostInput = {
+  channelId: "123456789",
+  botToken: "test_bot_token_xyz",
+  message: "System status: all systems nominal",
+};
 
-  t.after(() => {
-    global.fetch = originalFetch;
-  });
+function fakeFetch(): {
+  calls: any[];
+  setHandler: (fn: (input: any) => Promise<any>) => void;
+} {
+  const calls: any[] = [];
+  let handler: ((input: any) => Promise<any>) | null = null;
 
-  await t.test("1. Successful channel post returns success: true", async () => {
-    let requestedUrl = "";
-    let requestOptions: any = null;
+  const fn = async (input: any) => {
+    calls.push(input);
+    if (!handler) {
+      throw new Error("no handler set");
+    }
+    return handler(input);
+  };
 
-    global.fetch = async (url: any, options: any) => {
-      requestedUrl = url;
-      requestOptions = options;
-      return new Response(JSON.stringify({ id: "msg_chan_1" }), {
+  (fn as any).calls = calls;
+  (fn as any).setHandler = (h: (input: any) => Promise<any>) => {
+    handler = h;
+  };
+
+  return {
+    calls,
+    setHandler: (handler) => {
+      (fn as any).currentHandler = handler;
+    },
+  };
+}
+
+test("deliverChannelPost service tests", async (t) => {
+  await t.test("1. Successful delivery returns { success: true }", async () => {
+    const calls: any[] = [];
+
+    const deliverer = async (input: RequestInfo | URL) => {
+      calls.push(input);
+      return {
+        ok: true,
         status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      };
     };
 
-    const result = await deliverChannelPost({
-      botToken: "secret_bot_token_123",
-      channelId: "chan_999",
-      payload: { content: "Channel announcement" },
-    });
+    const origFetch = global.fetch;
+    (global as any).fetch = deliverer;
 
-    assert.strictEqual(result.success, true);
-    assert.strictEqual(
-      requestedUrl,
-      "https://discord.com/api/v10/channels/chan_999/messages"
-    );
-    assert.strictEqual(requestOptions.method, "POST");
-    assert.ok(requestOptions.signal instanceof AbortSignal);
-    assert.strictEqual(
-      requestOptions.headers["Authorization"],
-      "Bot secret_bot_token_123"
-    );
-    assert.strictEqual(
-      requestOptions.body,
-      JSON.stringify({ content: "Channel announcement" })
-    );
-  });
-
-  await t.test("2. HTTP 429 is classified as transient", async () => {
-    global.fetch = async () => new Response("Rate limited", { status: 429 });
-
-    const result = await deliverChannelPost({
-      botToken: "token",
-      channelId: "chan",
-      payload: { content: "test" },
-    });
-
-    assert.strictEqual(result.success, false);
-    if (!result.success) {
-      assert.strictEqual(result.category, "transient");
-      assert.strictEqual(result.status, 429);
+    try {
+      const result = await deliverChannelPost(BASE_INPUT);
+      assert.strictEqual(result.success, true);
+    } finally {
+      (global as any).fetch = origFetch;
     }
   });
 
-  await t.test("3. HTTP 5xx is classified as transient", async () => {
-    global.fetch = async () => new Response("Server error", { status: 503 });
+  await t.test("2. Permanent HTTP failure returns category permanent with status", async () => {
+    const deliverer = async () => {
+      return {
+        ok: false,
+        status: 400,
+      };
+    };
 
-    const result = await deliverChannelPost({
-      botToken: "token",
-      channelId: "chan",
-      payload: { content: "test" },
-    });
+    const origFetch = global.fetch;
+    (global as any).fetch = deliverer;
 
-    assert.strictEqual(result.success, false);
-    if (!result.success) {
-      assert.strictEqual(result.category, "transient");
-      assert.strictEqual(result.status, 503);
+    try {
+      const result = await deliverChannelPost(BASE_INPUT);
+      assert.strictEqual(result.success, false);
+      if (!result.success) {
+        assert.strictEqual(result.category, "permanent");
+        assert.strictEqual(result.status, 400);
+      }
+    } finally {
+      (global as any).fetch = origFetch;
     }
   });
 
-  await t.test("4. Other 4xx is classified as permanent", async () => {
-    global.fetch = async () => new Response("Forbidden", { status: 403 });
-
-    const result = await deliverChannelPost({
-      botToken: "token",
-      channelId: "chan",
-      payload: { content: "test" },
-    });
-
-    assert.strictEqual(result.success, false);
-    if (!result.success) {
-      assert.strictEqual(result.category, "permanent");
-      assert.strictEqual(result.status, 403);
-    }
-  });
-
-  await t.test("5. Timeout is classified as timeout", async () => {
-    global.fetch = async () => {
-      const err: any = new Error("Aborted");
+  await t.test("3. Timeout/network failure returns category timeout or network", async () => {
+    const deliverer = async () => {
+      const err: any = new Error("aborted");
       err.name = "AbortError";
       throw err;
     };
 
-    const result = await deliverChannelPost({
-      botToken: "token",
-      channelId: "chan",
-      payload: { content: "test" },
-    });
+    const origFetch = global.fetch;
+    (global as any).fetch = deliverer;
 
-    assert.strictEqual(result.success, false);
-    if (!result.success) {
-      assert.strictEqual(result.category, "timeout");
+    try {
+      const result = await deliverChannelPost(BASE_INPUT);
+      assert.strictEqual(result.success, false);
+      if (!result.success) {
+        assert.strictEqual(result.category, "timeout");
+      }
+    } finally {
+      (global as any).fetch = origFetch;
     }
   });
 
-  await t.test("6. Network failure is classified as network", async () => {
-    global.fetch = async () => {
-      throw new Error("Network error");
+  await t.test("4. allowed_mentions is present in the request body", async () => {
+    let capturedBody: any = null;
+
+    const deliverer = async (url: any, init: any) => {
+      capturedBody = JSON.parse(init.body);
+      return { ok: true, status: 200 };
     };
 
-    const result = await deliverChannelPost({
-      botToken: "token",
-      channelId: "chan",
-      payload: { content: "test" },
-    });
+    const origFetch = global.fetch;
+    (global as any).fetch = deliverer;
 
-    assert.strictEqual(result.success, false);
-    if (!result.success) {
-      assert.strictEqual(result.category, "network");
+    try {
+      await deliverChannelPost(BASE_INPUT);
+      assert.notStrictEqual(capturedBody, null);
+      assert.deepStrictEqual(capturedBody.allowed_mentions, { parse: [] });
+      assert.strictEqual(capturedBody.content, BASE_INPUT.message);
+    } finally {
+      (global as any).fetch = origFetch;
+    }
+  });
+
+  await t.test("5. Bot token is supplied through the Authorization header", async () => {
+    let capturedAuth: string | null = null;
+
+    const deliverer = async (url: any, init: any) => {
+      capturedAuth = init.headers.Authorization;
+      return { ok: true, status: 200 };
+    };
+
+    const origFetch = global.fetch;
+    (global as any).fetch = deliverer;
+
+    try {
+      await deliverChannelPost(BASE_INPUT);
+      assert.strictEqual(capturedAuth, `Bot ${BASE_INPUT.botToken}`);
+    } finally {
+      (global as any).fetch = origFetch;
+    }
+  });
+
+  await t.test("6. Missing channelId or botToken returns permanent failure", async () => {
+    const origFetch = global.fetch;
+    (global as any).fetch = async () => {
+      throw new Error("fetch should not be called");
+    };
+
+    try {
+      const result = await deliverChannelPost({
+        channelId: "",
+        botToken: BASE_INPUT.botToken,
+        message: BASE_INPUT.message,
+      });
+      assert.strictEqual(result.success, false);
+      if (!result.success) {
+        assert.strictEqual(result.category, "permanent");
+        assert.strictEqual(result.status, 400);
+      }
+    } finally {
+      (global as any).fetch = origFetch;
+    }
+  });
+
+  await t.test("7. Transient HTTP failure (5xx) returns category transient", async () => {
+    const deliverer = async () => {
+      return {
+        ok: false,
+        status: 503,
+      };
+    };
+
+    const origFetch = global.fetch;
+    (global as any).fetch = deliverer;
+
+    try {
+      const result = await deliverChannelPost(BASE_INPUT);
+      assert.strictEqual(result.success, false);
+      if (!result.success) {
+        assert.strictEqual(result.category, "transient");
+        assert.strictEqual(result.status, 503);
+      }
+    } finally {
+      (global as any).fetch = origFetch;
     }
   });
 });

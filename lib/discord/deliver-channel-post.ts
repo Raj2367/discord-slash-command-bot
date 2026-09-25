@@ -1,45 +1,40 @@
-export interface DeliverChannelPostInput {
-  botToken: string;
-  channelId: string;
-  payload: {
-    content?: string;
-    allowed_mentions?: {
-      parse: string[];
-      [key: string]: any;
-    };
-    [key: string]: any;
-  };
-}
+import { DeliveryResult } from "./deliver-interaction-response";
 
-export type ChannelPostDeliveryResult =
-  | { success: true }
-  | { success: false; category: "transient"; status?: number; error?: string }
-  | { success: false; category: "permanent"; status: number; error?: string }
-  | { success: false; category: "timeout"; error?: string }
-  | { success: false; category: "network"; error?: string };
+export interface DeliverChannelPostInput {
+  channelId: string;
+  botToken: string;
+  message: string;
+}
 
 export async function deliverChannelPost(
   input: DeliverChannelPostInput
-): Promise<ChannelPostDeliveryResult> {
-  const { botToken, channelId, payload } = input;
+): Promise<DeliveryResult> {
+  const { channelId, botToken, message } = input;
 
-  if (!botToken || !channelId) {
+  if (!channelId || !botToken) {
     return {
       success: false,
       category: "permanent",
       status: 400,
-      error: "Missing botToken or channelId",
+      error: "Missing channelId or botToken",
     };
   }
 
   const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
 
+  const payload = {
+    content: message,
+    allowed_mentions: {
+      parse: [],
+    },
+  };
+
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bot ${botToken}`,
         "Content-Type": "application/json",
+        Authorization: `Bot ${botToken}`,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(4000),
@@ -56,7 +51,7 @@ export async function deliverChannelPost(
         success: false,
         category: "transient",
         status,
-        error: `Discord channel post transient error: ${status}`,
+        error: `Discord API transient error: ${status}`,
       };
     }
 
@@ -65,7 +60,7 @@ export async function deliverChannelPost(
         success: false,
         category: "permanent",
         status,
-        error: `Discord channel post permanent error: ${status}`,
+        error: `Discord API permanent error: ${status}`,
       };
     }
 
@@ -73,7 +68,7 @@ export async function deliverChannelPost(
       success: false,
       category: "transient",
       status,
-      error: `Discord channel post unexpected status: ${status}`,
+      error: `Discord API unexpected status: ${status}`,
     };
   } catch (err: any) {
     if (
@@ -91,7 +86,7 @@ export async function deliverChannelPost(
     return {
       success: false,
       category: "network",
-      error: "Network error during channel post delivery",
+      error: "Network error during channel-post delivery",
     };
   }
 }
