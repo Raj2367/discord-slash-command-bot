@@ -4,6 +4,7 @@ import {
   RetryDeliveryOptions,
 } from "./retry-discord-delivery";
 import { retryChannelPost, RetryChannelPostOptions } from "./retry-channel-post";
+import { retryMirror, RetryMirrorOptions } from "./retry-mirror";
 import { prisma } from "@/lib/db";
 
 export interface ProcessInteractionClient {
@@ -56,6 +57,7 @@ export async function processInteraction(
   options: RetryDeliveryOptions & {
     client?: ProcessInteractionClient;
     channelPost?: RetryChannelPostOptions;
+    mirror?: RetryMirrorOptions;
   } = {}
 ): Promise<ProcessInteractionResult> {
   const {
@@ -67,6 +69,9 @@ export async function processInteraction(
     channelPostEnabled,
     channelId,
     botToken,
+    mirrorEnabled,
+    mirrorWebhookUrl,
+    mirrorType,
   } = input;
 
   const content = responseSnapshot.message;
@@ -186,6 +191,19 @@ export async function processInteraction(
         });
       }
       }
+    }
+
+    if (mirrorEnabled && mirrorType === "DISCORD_WEBHOOK") {
+      await retryMirror(
+        {
+          webhookUrl: mirrorWebhookUrl!,
+          message: responseSnapshot.message,
+        },
+        {
+          deliverer: options.mirror?.deliverer,
+          sleep: options.mirror?.sleep,
+        }
+      );
     }
   } else {
     const dbClient = options.client || prisma;

@@ -526,4 +526,102 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(capturedInput.payload.content, "System is healthy");
   });
+
+  await t.test("15. enabled + DISCORD_WEBHOOK invokes the mirror retry deliverer with the response message", async () => {
+    let mirrorCall: any = null;
+    const mirrorDeliverer = async (input: any): Promise<DeliveryResult> => {
+      mirrorCall = input;
+      return { success: true };
+    };
+
+    const result = await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/123/token",
+        mirrorType: "DISCORD_WEBHOOK",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: {
+          actionRecord: { updateMany: async () => ({ count: 1 }) },
+          interactionLog: { update: async () => ({}) },
+        },
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(result.deliveryResult.success, true);
+    assert.strictEqual(
+      mirrorCall.webhookUrl,
+      "https://discord.com/api/webhooks/123/token"
+    );
+    assert.strictEqual(mirrorCall.message, "System is healthy");
+  });
+
+  await t.test("16. disabled mirror does not invoke the mirror deliverer", async () => {
+    let mirrorCalls = 0;
+    const mirrorDeliverer = async (): Promise<DeliveryResult> => {
+      mirrorCalls++;
+      return { success: true };
+    };
+
+    await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: false,
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/123/token",
+        mirrorType: "DISCORD_WEBHOOK",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: {
+          actionRecord: { updateMany: async () => ({ count: 1 }) },
+          interactionLog: { update: async () => ({}) },
+        },
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(mirrorCalls, 0);
+  });
+
+  await t.test("17. non-DISCORD_WEBHOOK mirrorType does not invoke the mirror deliverer", async () => {
+    let mirrorCalls = 0;
+    const mirrorDeliverer = async (): Promise<DeliveryResult> => {
+      mirrorCalls++;
+      return { success: true };
+    };
+
+    await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: "https://hooks.slack.com/services/x/y/z",
+        mirrorType: "SLACK_WEBHOOK",
+      },
+      {
+        deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+        sleep: async () => {},
+        client: {
+          actionRecord: { updateMany: async () => ({ count: 1 }) },
+          interactionLog: { update: async () => ({}) },
+        },
+        mirror: {
+          deliverer: mirrorDeliverer,
+          sleep: async () => {},
+        },
+      }
+    );
+
+    assert.strictEqual(mirrorCalls, 0);
+  });
 });
