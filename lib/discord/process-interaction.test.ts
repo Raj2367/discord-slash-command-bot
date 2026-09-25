@@ -498,4 +498,32 @@ test("processInteraction service tests", async (t) => {
     );
     assert.ok(updatedArgs.data.completedAt instanceof Date);
   });
+
+  await t.test("14. Accepts mirror configuration inputs without affecting DISCORD_RESPONSE delivery", async () => {
+    let capturedInput: any = null;
+    const deliverer = async (input: any): Promise<DeliveryResult> => {
+      capturedInput = input;
+      return { success: true };
+    };
+
+    const result = await processInteraction(
+      {
+        ...baseInput,
+        mirrorEnabled: true,
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/123/token",
+        mirrorType: "DISCORD_WEBHOOK",
+      },
+      {
+        deliverer,
+        sleep: async () => {},
+        client: {
+          actionRecord: { updateMany: async () => ({ count: 1 }) },
+          interactionLog: { update: async () => ({}) },
+        },
+      }
+    );
+
+    assert.strictEqual(result.deliveryResult.success, true);
+    assert.strictEqual(capturedInput.payload.content, "System is healthy");
+  });
 });
