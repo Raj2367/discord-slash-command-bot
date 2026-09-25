@@ -4,6 +4,16 @@ import {
   RetryDeliveryOptions,
 } from "./retry-discord-delivery";
 import { normalizeReportText } from "./normalize-report";
+import { prisma } from "@/lib/db";
+
+export interface ProcessInteractionClient {
+  actionRecord: {
+    updateMany(args: {
+      where: { interactionLogId: string; type: "DISCORD_RESPONSE" };
+      data: { status: string; attempts: number; completedAt: Date };
+    }): Promise<unknown>;
+  };
+}
 
 export interface ProcessInteractionInput {
   interactionLogId: string;
@@ -25,9 +35,9 @@ export interface ProcessInteractionResult {
 
 export async function processInteraction(
   input: ProcessInteractionInput,
-  options: RetryDeliveryOptions = {}
+  options: RetryDeliveryOptions & { client?: ProcessInteractionClient } = {}
 ): Promise<ProcessInteractionResult> {
-  const { applicationId, interactionToken, commandName, reportText, responseSnapshot } = input;
+  const { interactionLogId, applicationId, interactionToken, commandName, reportText, responseSnapshot } = input;
 
   let normalizedReportText: string | undefined;
   if (commandName === "report" && reportText !== undefined) {
@@ -55,6 +65,21 @@ export async function processInteraction(
     },
     options
   );
+
+  if (deliveryResult.success) {
+    const dbClient = options.client || prisma;
+    await dbClient.actionRecord.updateMany({
+      where: {
+        interactionLogId,
+        type: "DISCORD_RESPONSE",
+      },
+      data: {
+        status: "SUCCESS",
+        attempts: deliveryResult.attempts,
+        completedAt: new Date(),
+      },
+    });
+  }
 
   return {
     deliveryResult,

@@ -22,7 +22,11 @@ test("processInteraction service tests", async (t) => {
 
     const sleep = async () => {};
 
-    const result = await processInteraction(baseInput, { deliverer, sleep });
+    const result = await processInteraction(baseInput, {
+      deliverer,
+      sleep,
+      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+    });
 
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(result.attempts, 1);
@@ -63,7 +67,11 @@ test("processInteraction service tests", async (t) => {
 
     const sleep = async () => {};
 
-    const result = await processInteraction(baseInput, { deliverer, sleep });
+    const result = await processInteraction(baseInput, {
+      deliverer,
+      sleep,
+      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+    });
 
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(result.attempts, 2);
@@ -100,7 +108,11 @@ test("processInteraction service tests", async (t) => {
       responseSnapshot: { message: "Report logged" },
     };
 
-    const result = await processInteraction(reportInput, { deliverer, sleep });
+    const result = await processInteraction(reportInput, {
+      deliverer,
+      sleep,
+      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+    });
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(result.attempts, 1);
     assert.strictEqual(result.normalizedReportText, "Server issue report");
@@ -114,7 +126,47 @@ test("processInteraction service tests", async (t) => {
       commandName: "report",
       reportText: "x".repeat(1600),
     };
-    const longResult = await processInteraction(longInput, { deliverer, sleep });
+    const longResult = await processInteraction(longInput, {
+      deliverer,
+      sleep,
+      client: { actionRecord: { updateMany: async () => ({ count: 1 }) } },
+    });
     assert.strictEqual(longResult.normalizedReportText?.length, 1500);
+  });
+
+  await t.test("6. Successful delivery updates DISCORD_RESPONSE action to SUCCESS with attempts", async () => {
+    let updatedArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+    };
+
+    let attempts = 0;
+    const deliverer = async (): Promise<DeliveryResult> => {
+      attempts++;
+      if (attempts < 2) {
+        return { success: false, category: "transient", status: 500 };
+      }
+      return { success: true };
+    };
+
+    const sleep = async () => {};
+
+    const result = await processInteraction(baseInput, { deliverer, sleep, client: mockClient });
+
+    assert.strictEqual(result.deliveryResult.success, true);
+    assert.strictEqual(result.attempts, 2);
+    assert.notStrictEqual(updatedArgs, null);
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "DISCORD_RESPONSE",
+    });
+    assert.strictEqual(updatedArgs.data.status, "SUCCESS");
+    assert.strictEqual(updatedArgs.data.attempts, 2);
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
   });
 });
