@@ -113,7 +113,7 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(result.attempts, 3);
   });
 
-  await t.test("5. reportText input is normalized at boundary and used in payload with allowed_mentions", async () => {
+  await t.test("5. /report sends responseSnapshot.message as payload content", async () => {
     let capturedInput: any = null;
     const deliverer = async (input: any): Promise<DeliveryResult> => {
       capturedInput = input;
@@ -124,7 +124,6 @@ test("processInteraction service tests", async (t) => {
     const reportInput = {
       ...baseInput,
       commandName: "report",
-      reportText: "   Server issue report   ",
       responseSnapshot: { message: "Report logged" },
     };
 
@@ -138,26 +137,11 @@ test("processInteraction service tests", async (t) => {
     });
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(result.attempts, 1);
-    assert.strictEqual(result.normalizedReportText, "Server issue report");
+    assert.strictEqual(result.normalizedReportText, undefined);
     assert.deepStrictEqual(capturedInput.payload, {
       content: "Report logged",
       allowed_mentions: { parse: [] },
     });
-
-    const longInput = {
-      ...baseInput,
-      commandName: "report",
-      reportText: "x".repeat(1600),
-    };
-    const longResult = await processInteraction(longInput, {
-      deliverer,
-      sleep,
-      client: {
-        actionRecord: { updateMany: async () => ({ count: 1 }) },
-        interactionLog: { update: async () => ({}) },
-      },
-    });
-    assert.strictEqual(longResult.normalizedReportText?.length, 1500);
   });
 
   await t.test("6. Successful delivery updates DISCORD_RESPONSE action to SUCCESS with attempts and InteractionLog to COMPLETED", async () => {

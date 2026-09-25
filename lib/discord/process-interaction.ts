@@ -3,7 +3,6 @@ import {
   RetriedDeliveryResult,
   RetryDeliveryOptions,
 } from "./retry-discord-delivery";
-import { normalizeReportText } from "./normalize-report";
 import { prisma } from "@/lib/db";
 
 export interface ProcessInteractionClient {
@@ -34,7 +33,6 @@ export interface ProcessInteractionInput {
   applicationId: string;
   interactionToken: string;
   commandName: string;
-  reportText?: string;
   responseSnapshot: {
     message: string;
     [key: string]: any;
@@ -51,13 +49,7 @@ export async function processInteraction(
   input: ProcessInteractionInput,
   options: RetryDeliveryOptions & { client?: ProcessInteractionClient } = {}
 ): Promise<ProcessInteractionResult> {
-  const { interactionLogId, applicationId, interactionToken, commandName, reportText, responseSnapshot } = input;
-
-  let normalizedReportText: string | undefined;
-  if (commandName === "report" && reportText !== undefined) {
-    const normalized = normalizeReportText(reportText);
-    normalizedReportText = normalized.text;
-  }
+  const { interactionLogId, applicationId, interactionToken, commandName, responseSnapshot } = input;
 
   const content = responseSnapshot.message;
 
@@ -146,6 +138,6 @@ export async function processInteraction(
   return {
     deliveryResult,
     attempts: deliveryResult.attempts,
-    normalizedReportText,
+    normalizedReportText: undefined,
   };
 }
