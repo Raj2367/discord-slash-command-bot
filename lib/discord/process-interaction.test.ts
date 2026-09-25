@@ -82,7 +82,7 @@ test("processInteraction service tests", async (t) => {
     assert.strictEqual(result.attempts, 3);
   });
 
-  await t.test("5. reportText input is accepted and passed through", async () => {
+  await t.test("5. reportText input is normalized at boundary including trimming and 1500-char limit", async () => {
     let capturedInput: any = null;
     const deliverer = async (input: any): Promise<DeliveryResult> => {
       capturedInput = input;
@@ -93,11 +93,21 @@ test("processInteraction service tests", async (t) => {
     const reportInput = {
       ...baseInput,
       commandName: "report",
-      reportText: "Server issue report",
+      reportText: "   Server issue report   ",
     };
 
     const result = await processInteraction(reportInput, { deliverer, sleep });
     assert.strictEqual(result.deliveryResult.success, true);
     assert.strictEqual(result.attempts, 1);
+    assert.strictEqual(result.normalizedReportText, "Server issue report");
+    assert.deepStrictEqual(capturedInput.payload, { content: "System is healthy" });
+
+    const longInput = {
+      ...baseInput,
+      commandName: "report",
+      reportText: "x".repeat(1600),
+    };
+    const longResult = await processInteraction(longInput, { deliverer, sleep });
+    assert.strictEqual(longResult.normalizedReportText?.length, 1500);
   });
 });

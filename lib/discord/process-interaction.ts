@@ -3,6 +3,7 @@ import {
   RetriedDeliveryResult,
   RetryDeliveryOptions,
 } from "./retry-discord-delivery";
+import { normalizeReportText } from "./normalize-report";
 
 export interface ProcessInteractionInput {
   interactionLogId: string;
@@ -19,13 +20,20 @@ export interface ProcessInteractionInput {
 export interface ProcessInteractionResult {
   deliveryResult: RetriedDeliveryResult;
   attempts: number;
+  normalizedReportText?: string;
 }
 
 export async function processInteraction(
   input: ProcessInteractionInput,
   options: RetryDeliveryOptions = {}
 ): Promise<ProcessInteractionResult> {
-  const { applicationId, interactionToken, responseSnapshot } = input;
+  const { applicationId, interactionToken, commandName, reportText, responseSnapshot } = input;
+
+  let normalizedReportText: string | undefined;
+  if (commandName === "report" && reportText !== undefined) {
+    const normalized = normalizeReportText(reportText);
+    normalizedReportText = normalized.text;
+  }
 
   const payload = {
     content: responseSnapshot.message,
@@ -43,5 +51,6 @@ export async function processInteraction(
   return {
     deliveryResult,
     attempts: deliveryResult.attempts,
+    normalizedReportText,
   };
 }
