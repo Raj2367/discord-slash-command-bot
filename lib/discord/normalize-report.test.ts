@@ -35,9 +35,8 @@ test("normalizeReportText and provider payload formatting tests", async (t) => {
   });
 
   await t.test("3. Discord receives normalized text and allowed_mentions: { parse: [] }", () => {
-    const input = "Alert @everyone / @here check";
-    const normalized = normalizeReportText(input);
-    const payload = formatDiscordReportPayload(normalized.text);
+    const text = "Alert @everyone / @here check";
+    const payload = formatDiscordReportPayload(text);
     assert.strictEqual(payload.content, "Alert @everyone / @here check");
     assert.deepStrictEqual(payload.allowed_mentions, { parse: [] });
   });

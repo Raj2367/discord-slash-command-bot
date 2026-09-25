@@ -33,9 +33,9 @@ export function normalizeReportText(
   };
 }
 
-export function formatDiscordReportPayload(normalizedText: string) {
+export function formatDiscordReportPayload(text: string) {
   return {
-    content: normalizedText,
+    content: text,
     allowed_mentions: {
       parse: [],
     },
