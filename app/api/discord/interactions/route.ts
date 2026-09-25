@@ -210,6 +210,9 @@ export async function POST(request: Request) {
                 responseSnapshot: {
                   message: persistedMessage,
                 },
+                channelPostEnabled: commandRule.channelPostEnabled,
+                channelId: serverConfig?.channelId,
+                botToken: process.env.DISCORD_BOT_TOKEN,
               });
             } catch (err) {
               console.error("Error in post-response processInteraction:", err);
