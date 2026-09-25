@@ -9,7 +9,7 @@ import { prisma } from "@/lib/db";
 export interface ProcessInteractionClient {
   actionRecord: {
     updateMany(args: {
-      where: { interactionLogId: string; type: "DISCORD_RESPONSE" };
+      where: { interactionLogId: string; type: "DISCORD_RESPONSE" | "CHANNEL_POST" };
       data: {
         status: string;
         attempts: number;
@@ -129,7 +129,7 @@ export async function processInteraction(
     });
 
     if (channelPostEnabled) {
-      await retryChannelPost(
+      const channelPostResult = await retryChannelPost(
         {
           channelId: channelId!,
           botToken: botToken!,
@@ -140,6 +140,20 @@ export async function processInteraction(
           sleep: options.channelPost?.sleep,
         }
       );
+
+      if (channelPostResult.success) {
+        await dbClient.actionRecord.updateMany({
+          where: {
+            interactionLogId,
+            type: "CHANNEL_POST",
+          },
+          data: {
+            status: "SUCCESS",
+            attempts: channelPostResult.attempts,
+            completedAt: new Date(),
+          },
+        });
+      }
     }
   } else {
     const dbClient = options.client || prisma;

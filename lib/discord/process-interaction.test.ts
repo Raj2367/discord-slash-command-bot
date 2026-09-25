@@ -349,4 +349,49 @@ test("processInteraction service tests", async (t) => {
 
     assert.strictEqual(cpCalled, false);
   });
+
+  await t.test("11. Successful channel-post delivery updates CHANNEL_POST action to SUCCESS with attempts", async () => {
+    let updatedArgs: any = null;
+    const mockClient = {
+      actionRecord: {
+        updateMany: async (args: any) => {
+          updatedArgs = args;
+          return { count: 1 };
+        },
+      },
+      interactionLog: {
+        update: async () => ({}),
+      },
+    };
+
+    const cpDeliverer = async (_input: any): Promise<DeliveryResult> => {
+      return { success: true };
+    };
+
+    const input = {
+      ...baseInput,
+      channelPostEnabled: true,
+      channelId: "chan_123",
+      botToken: "bot_token_secret",
+    };
+
+    await processInteraction(input, {
+      deliverer: async (): Promise<DeliveryResult> => ({ success: true }),
+      sleep: async () => {},
+      client: mockClient,
+      channelPost: {
+        deliverer: cpDeliverer,
+        sleep: async () => {},
+      },
+    });
+
+    assert.notStrictEqual(updatedArgs, null);
+    assert.deepStrictEqual(updatedArgs.where, {
+      interactionLogId: "log_123",
+      type: "CHANNEL_POST",
+    });
+    assert.strictEqual(updatedArgs.data.status, "SUCCESS");
+    assert.strictEqual(updatedArgs.data.attempts, 1);
+    assert.ok(updatedArgs.data.completedAt instanceof Date);
+  });
 });
