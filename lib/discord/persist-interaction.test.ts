@@ -103,7 +103,10 @@ test("persistInteraction service tests", async (t) => {
     const discordAction = result.interactionLog.actions.find((a: any) => a.type === "DISCORD_RESPONSE");
     assert.deepStrictEqual(discordAction.result, { message: "Report received: issue" });
     const channelPost = result.interactionLog.actions.find((a: any) => a.type === "CHANNEL_POST");
-    assert.deepStrictEqual(channelPost.result, { message: "Report received" });
+    assert.deepStrictEqual(channelPost.result, {
+      message: "Report received: issue",
+    });
+    assert.deepStrictEqual(channelPost.result, discordAction.result);
     const mirror = result.interactionLog.actions.find((a: any) => a.type === "MIRROR");
     assert.deepStrictEqual(mirror.result, { message: "Report received" });
   });
@@ -331,5 +334,55 @@ test("persistInteraction service tests", async (t) => {
     const expectedMessage = `Report logged: ${"x".repeat(1500)}`;
     assert.strictEqual(result.interactionLog.actions[0].result.message.length, expectedMessage.length);
     assert.strictEqual(result.interactionLog.actions[0].result.message, expectedMessage);
+  });
+
+  await t.test("8. /status CHANNEL_POST message is the configured response text (no report text)", async () => {
+    let createdData: any = null;
+    const mockTx = {
+      interactionLog: {
+        findUnique: async () => null,
+        create: async (args: any) => {
+          createdData = args.data;
+          return {
+            id: "log_8",
+            ...args.data,
+            actions: args.data.actions.create.map((a: any, i: number) => ({
+              id: `act_${i}`,
+              ...a,
+            })),
+          };
+        },
+      },
+    };
+
+    const mockClient = {
+      $transaction: async (fn: any) => fn(mockTx),
+    };
+
+    const parsed: any = {
+      type: "APPLICATION_COMMAND",
+      id: "int_8",
+      applicationId: "app_123",
+      commandName: "status",
+      options: {},
+    };
+
+    const commandRule = {
+      responseText: "Status is OK",
+      mirrorEnabled: false,
+      channelPostEnabled: true,
+    };
+
+    const result = await persistInteraction({ parsed, commandRule }, mockClient);
+
+    const discordAction = result.interactionLog.actions.find(
+      (a: any) => a.type === "DISCORD_RESPONSE"
+    );
+    const channelPost = result.interactionLog.actions.find(
+      (a: any) => a.type === "CHANNEL_POST"
+    );
+    assert.deepStrictEqual(discordAction.result, { message: "Status is OK" });
+    assert.deepStrictEqual(channelPost.result, { message: "Status is OK" });
+    assert.deepStrictEqual(channelPost.result, discordAction.result);
   });
 });

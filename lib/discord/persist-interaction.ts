@@ -96,7 +96,7 @@ export async function persistInteraction(
           type: "CHANNEL_POST",
           status: "PENDING",
           attempts: 0,
-          result: outboundSnapshot,
+          result: discordResponseSnapshot,
         });
       }
 
