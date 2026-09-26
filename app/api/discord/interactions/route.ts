@@ -86,8 +86,6 @@ export async function POST(request: Request) {
 
     if (parsed.type === "APPLICATION_COMMAND") {
       const guildId = parsed.guildId || rawJson?.guild_id;
-      // TEMP diagnostics: start pre-ACK timer
-      const _preAckStart = performance.now();
 
       // Require guild_id and match configured guild
       if (!guildId || guildId !== config.guildId) {
@@ -106,12 +104,9 @@ export async function POST(request: Request) {
       // Check DiscordServerConfig in DB if present, or match guildId
       let serverConfig = null;
       try {
-        const _t0 = performance.now();
         serverConfig = await prisma.discordServerConfig.findUnique({
           where: { guildId },
         });
-        // TEMP diagnostics
-        console.log(`DIAG: discordServerConfig.findUnique took ${Math.round(performance.now() - _t0)}ms`);
       } catch {
         // If DB fails or unseeded, fallback to config.guildId match
       }
@@ -134,12 +129,9 @@ export async function POST(request: Request) {
       // Load CommandRule
       let commandRule = null;
       try {
-        const _t1 = performance.now();
         commandRule = await prisma.commandRule.findUnique({
           where: { commandName },
         });
-        // TEMP diagnostics
-        console.log(`DIAG: commandRule.findUnique took ${Math.round(performance.now() - _t1)}ms`);
       } catch (err) {
         console.error("Error loading command rule:", err);
       }
@@ -189,7 +181,6 @@ export async function POST(request: Request) {
 
       // Enabled and configured command: persist via persistInteraction
       try {
-        const _t2 = performance.now();
         const persistResult = await persistInteraction({
           parsed,
           raw: rawJson,
@@ -199,8 +190,6 @@ export async function POST(request: Request) {
             channelPostEnabled: commandRule.channelPostEnabled,
           },
         });
-        // TEMP diagnostics
-        console.log(`DIAG: persistInteraction took ${Math.round(performance.now() - _t2)}ms`);
 
         const interactionLog = persistResult.interactionLog;
 
@@ -236,8 +225,6 @@ export async function POST(request: Request) {
           after(runPostResponse);
         }
 
-        // TEMP diagnostics
-        console.log(`DIAG: pre-ACK total elapsed ${Math.round(performance.now() - _preAckStart)}ms`);
         // Return deferred response { type: 5 } for both new and duplicate interactions
         return NextResponse.json({ type: 5 }, { status: 200 });
       } catch (err: any) {
