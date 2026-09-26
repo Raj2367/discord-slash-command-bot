@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --import tsx --test"
+    "test": "node --import tsx --test",
+    "register:commands": "tsx scripts/register-commands.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
