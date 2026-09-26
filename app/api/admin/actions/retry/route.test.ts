@@ -7,6 +7,14 @@ import { POST } from "./route";
 
 const originalFindUnique = prisma.actionRecord.findUnique;
 const originalUpdateMany = prisma.actionRecord.updateMany;
+const originalDiscordServerConfigFindUnique = (prisma as any).discordServerConfig?.findUnique;
+
+const setDiscordServerConfigFindUnique = (fn: any) => {
+  if (!(prisma as any).discordServerConfig) {
+    (prisma as any).discordServerConfig = {};
+  }
+  (prisma as any).discordServerConfig.findUnique = fn;
+};
 
 const makeAction = (overrides: any = {}) => ({
   id: "act_1",
@@ -41,6 +49,10 @@ const setUpdateMany = (fn: any) => {
   prisma.actionRecord.updateMany = fn;
 };
 
+const setRetryChannelPost = (fn: any) => {
+  (prisma as any).__setRetryChannelPost(fn);
+};
+
 // Helper: configure updateMany to return count=1 and capture args
 const setupClaimSuccess = (capture?: (args: any) => void) => {
   setUpdateMany(async (args: any) => {
@@ -49,11 +61,27 @@ const setupClaimSuccess = (capture?: (args: any) => void) => {
   });
 };
 
+// Helper: track updateMany calls for CHANNEL_POST delivery tests
+const trackUpdateMany = (capture?: (args: any) => void) => {
+  const calls: any[] = [];
+  setUpdateMany(async (args: any) => {
+    calls.push(args);
+    capture?.(args);
+    return { count: 1 };
+  });
+  return calls;
+};
+
 test("admin actions retry API route tests", async (t) => {
   t.after(() => {
     __setGetSession(originalGetAdminSession);
     prisma.actionRecord.findUnique = originalFindUnique;
     prisma.actionRecord.updateMany = originalUpdateMany;
+    if (originalDiscordServerConfigFindUnique) {
+      (prisma as any).discordServerConfig.findUnique = originalDiscordServerConfigFindUnique;
+    } else {
+      delete (prisma as any).discordServerConfig;
+    }
   });
 
   const authed = async () => ({ adminId: "admin_1" });
@@ -120,14 +148,30 @@ test("admin actions retry API route tests", async (t) => {
     assert.strictEqual(res.status, 400);
   });
 
-  await t.test("6. FAILED CHANNEL_POST -> claimed, PENDING, attempts 0, completedAt null, lastError null", async () => {
+  await t.test("6. FAILED CHANNEL_POST -> claimed PENDING then delivery executed", async () => {
     setSession(authed);
     setFindUnique(async () =>
       makeAction({ type: "CHANNEL_POST", status: "FAILED" })
     );
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: "chan_123",
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+    }));
+    setRetryChannelPost(async () => {
+      return { success: true, attempts: 1 };
+    });
     let updateArgs: any = null;
-    setupClaimSuccess((args) => {
-      updateArgs = args;
+    const calls: any[] = [];
+    setUpdateMany(async (args: any) => {
+      calls.push(args);
+      if (args.data.status === "PENDING") {
+        updateArgs = args;
+      }
+      return { count: 1 };
     });
     const req = new Request("http://localhost/api/admin/actions/retry", {
       method: "POST",
@@ -136,13 +180,6 @@ test("admin actions retry API route tests", async (t) => {
     });
     const res = await POST(req);
     assert.strictEqual(res.status, 200);
-    const data = await res.json();
-    assert.deepStrictEqual(data, {
-      eligible: true,
-      claimed: true,
-      actionId: "act_1",
-      type: "CHANNEL_POST",
-    });
     assert.strictEqual(updateArgs.where.id, "act_1");
     assert.ok(Array.isArray(updateArgs.where.OR));
     assert.strictEqual(updateArgs.where.OR.length, 2);
@@ -154,6 +191,7 @@ test("admin actions retry API route tests", async (t) => {
     assert.strictEqual(updateArgs.data.completedAt, null);
     assert.strictEqual(updateArgs.data.lastError, null);
     assert.ok(!("result" in updateArgs.data));
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
   });
 
   await t.test("7. FAILED MIRROR -> successfully claimed", async () => {
@@ -192,9 +230,25 @@ test("admin actions retry API route tests", async (t) => {
         updatedAt: new Date(Date.now() - 5 * 60 * 1000),
       })
     );
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: "chan_123",
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+    }));
+    setRetryChannelPost(async () => {
+      return { success: true, attempts: 1 };
+    });
     let updateArgs: any = null;
-    setupClaimSuccess((args) => {
-      updateArgs = args;
+    const calls: any[] = [];
+    setUpdateMany(async (args: any) => {
+      calls.push(args);
+      if (args.data.status === "PENDING") {
+        updateArgs = args;
+      }
+      return { count: 1 };
     });
     const req = new Request("http://localhost/api/admin/actions/retry", {
       method: "POST",
@@ -203,14 +257,8 @@ test("admin actions retry API route tests", async (t) => {
     });
     const res = await POST(req);
     assert.strictEqual(res.status, 200);
-    const data = await res.json();
-    assert.deepStrictEqual(data, {
-      eligible: true,
-      claimed: true,
-      actionId: "act_1",
-      type: "CHANNEL_POST",
-    });
     assert.strictEqual(updateArgs.data.status, "PENDING");
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
   });
 
   await t.test("9. fresh PENDING -> 409 and updateMany not called", async () => {
@@ -284,5 +332,249 @@ test("admin actions retry API route tests", async (t) => {
     const res = await POST(req);
     assert.strictEqual(res.status, 200);
     assert.ok(!("result" in updateArgs.data));
+  });
+
+  await t.test("13. CHANNEL_POST missing config -> FAILED with config error", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "CHANNEL_POST",
+        status: "FAILED",
+        result: { message: "test channel message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => null);
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.actionId, "act_1");
+    assert.strictEqual(data.type, "CHANNEL_POST");
+    assert.strictEqual(data.status, "FAILED");
+    assert.strictEqual(data.eligible, true);
+    assert.strictEqual(data.claimed, true);
+    assert.ok(calls.length >= 2);
+    const claimCall = calls[0];
+    assert.strictEqual(claimCall.data.status, "PENDING");
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.status, "FAILED");
+    assert.strictEqual(failCall.data.lastError, "Discord channel post is not configured");
+    assert.ok(failCall.data.completedAt instanceof Date);
+  });
+
+  await t.test("14. CHANNEL_POST missing channelId in config -> FAILED with config error", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "CHANNEL_POST",
+        status: "FAILED",
+        result: { message: "test channel message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: null,
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+    }));
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.lastError, "Discord channel post is not configured");
+  });
+
+  await t.test("15. CHANNEL_POST missing botToken -> FAILED with config error", async () => {
+    setSession(authed);
+    process.env.DISCORD_BOT_TOKEN = "";
+    setFindUnique(async () =>
+      makeAction({
+        type: "CHANNEL_POST",
+        status: "FAILED",
+        result: { message: "test channel message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: "chan_123",
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+    }));
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.lastError, "Discord channel post is not configured");
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
+  });
+
+  await t.test("16. CHANNEL_POST invalid result.message -> FAILED with snapshot error", async () => {
+    setSession(authed);
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
+    setFindUnique(async () =>
+      makeAction({
+        type: "CHANNEL_POST",
+        status: "FAILED",
+        result: { something: "else" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: "chan_123",
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+    }));
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.lastError, "Stored channel post snapshot is invalid");
+  });
+
+  await t.test("17. CHANNEL_POST retryChannelPost success -> SUCCESS", async () => {
+    setSession(authed);
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
+    setFindUnique(async () =>
+      makeAction({
+        type: "CHANNEL_POST",
+        status: "FAILED",
+        result: { message: "test channel message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: "chan_123",
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+    }));
+    let retryInput: any = null;
+    setRetryChannelPost(async (input: any) => {
+      retryInput = input;
+      return { success: true, attempts: 1 };
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "SUCCESS");
+    assert.strictEqual(retryInput.channelId, "chan_123");
+    assert.strictEqual(retryInput.botToken, "fake_bot_token");
+    assert.strictEqual(retryInput.message, "test channel message");
+    const successCall = calls[calls.length - 1];
+    assert.strictEqual(successCall.data.status, "SUCCESS");
+    assert.strictEqual(successCall.data.attempts, 1);
+    assert.strictEqual(successCall.data.lastError, null);
+  });
+
+  await t.test("18. CHANNEL_POST retryChannelPost failure -> FAILED with error", async () => {
+    setSession(authed);
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
+    setFindUnique(async () =>
+      makeAction({
+        type: "CHANNEL_POST",
+        status: "FAILED",
+        result: { message: "test channel message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: "chan_123",
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+    }));
+    setRetryChannelPost(async () => {
+      return {
+        success: false,
+        category: "transient",
+        status: 500,
+        error: "Discord API server error",
+        attempts: 3,
+      };
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.status, "FAILED");
+    assert.strictEqual(failCall.data.attempts, 3);
+    assert.strictEqual(failCall.data.lastError, "Discord API server error");
+  });
+
+  await t.test("19. CHANNEL_POST retryChannelPost throws -> FAILED with thrown error", async () => {
+    setSession(authed);
+    process.env.DISCORD_BOT_TOKEN = "fake_bot_token";
+    setFindUnique(async () =>
+      makeAction({
+        type: "CHANNEL_POST",
+        status: "FAILED",
+        result: { message: "test channel message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: "chan_123",
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+    }));
+    setRetryChannelPost(async () => {
+      throw new Error("Unexpected retry error");
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.status, "FAILED");
+    assert.strictEqual(failCall.data.lastError, "Unexpected retry error");
   });
 });

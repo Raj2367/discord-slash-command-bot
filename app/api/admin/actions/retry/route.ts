@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { getRetrySession } from "@/lib/auth/retry-session";
 import { prisma } from "@/lib/db";
+import { retryChannelPost } from "@/lib/discord/retry-channel-post";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const STALE_PENDING_MS = 2 * 60 * 1000;
+
+let _retryChannelPost = retryChannelPost;
+
+// @ts-ignore — test seam on the mutable prisma object
+(prisma as any).__setRetryChannelPost = (fn: typeof retryChannelPost) => {
+  _retryChannelPost = fn;
+};
 
 export async function POST(request: Request) {
   const session = await getRetrySession();
@@ -73,15 +81,169 @@ export async function POST(request: Request) {
     },
   });
 
-  if (claimResult.count === 1) {
+  if (claimResult.count !== 1) {
     return NextResponse.json(
-      { eligible: true, claimed: true, actionId, type: action.type },
+      { eligible: false, actionId, type: action.type },
+      { status: 409 }
+    );
+  }
+
+  // Claimed successfully — execute delivery for CHANNEL_POST only
+  if (action.type === "CHANNEL_POST") {
+    const serverConfig = await prisma.discordServerConfig.findUnique({
+      where: { guildId: action.interactionLog.guildId },
+    });
+
+    const channelId = serverConfig?.channelId;
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+
+    if (!channelId || !botToken) {
+      await prisma.actionRecord.updateMany({
+        where: {
+          interactionLogId: action.interactionLogId,
+          type: "CHANNEL_POST",
+        },
+        data: {
+          status: "FAILED",
+          attempts: 0,
+          completedAt: new Date(),
+          lastError: "Discord channel post is not configured",
+        },
+      });
+      return NextResponse.json(
+        {
+          eligible: true,
+          claimed: true,
+          actionId,
+          type: "CHANNEL_POST",
+          status: "FAILED",
+        },
+        { status: 200 }
+      );
+    }
+
+    const rawResult = action.result;
+    const message =
+      rawResult &&
+      typeof rawResult === "object" &&
+      rawResult !== null &&
+      !Array.isArray(rawResult) &&
+      typeof (rawResult as Record<string, unknown>).message === "string"
+        ? (rawResult as { message: string }).message
+        : null;
+
+    if (!message) {
+      await prisma.actionRecord.updateMany({
+        where: {
+          interactionLogId: action.interactionLogId,
+          type: "CHANNEL_POST",
+        },
+        data: {
+          status: "FAILED",
+          attempts: 0,
+          completedAt: new Date(),
+          lastError: "Stored channel post snapshot is invalid",
+        },
+      });
+      return NextResponse.json(
+        {
+          eligible: true,
+          claimed: true,
+          actionId,
+          type: "CHANNEL_POST",
+          status: "FAILED",
+        },
+        { status: 200 }
+      );
+    }
+
+    let cpResult;
+    try {
+      cpResult = await _retryChannelPost({
+        channelId,
+        botToken,
+        message,
+      });
+    } catch (err) {
+      await prisma.actionRecord.updateMany({
+        where: {
+          interactionLogId: action.interactionLogId,
+          type: "CHANNEL_POST",
+        },
+        data: {
+          status: "FAILED",
+          attempts: 0,
+          completedAt: new Date(),
+          lastError:
+            err instanceof Error
+              ? err.message
+              : "Channel post retry failed",
+        },
+      });
+      return NextResponse.json(
+        {
+          eligible: true,
+          claimed: true,
+          actionId,
+          type: "CHANNEL_POST",
+          status: "FAILED",
+        },
+        { status: 200 }
+      );
+    }
+
+    if (cpResult.success) {
+      await prisma.actionRecord.updateMany({
+        where: {
+          interactionLogId: action.interactionLogId,
+          type: "CHANNEL_POST",
+        },
+        data: {
+          status: "SUCCESS",
+          attempts: cpResult.attempts,
+          completedAt: new Date(),
+          lastError: null,
+        },
+      });
+      return NextResponse.json(
+        {
+          eligible: true,
+          claimed: true,
+          actionId,
+          type: "CHANNEL_POST",
+          status: "SUCCESS",
+        },
+        { status: 200 }
+      );
+    }
+
+    await prisma.actionRecord.updateMany({
+      where: {
+        interactionLogId: action.interactionLogId,
+        type: "CHANNEL_POST",
+      },
+      data: {
+        status: "FAILED",
+        attempts: cpResult.attempts,
+        completedAt: new Date(),
+        lastError: cpResult.error || "Discord channel post delivery failed",
+      },
+    });
+    return NextResponse.json(
+      {
+        eligible: true,
+        claimed: true,
+        actionId,
+        type: "CHANNEL_POST",
+        status: "FAILED",
+      },
       { status: 200 }
     );
   }
 
+  // Non-CHANNEL_POST (e.g., MIRROR): claim only, no delivery
   return NextResponse.json(
-    { eligible: false, actionId, type: action.type },
-    { status: 409 }
+    { eligible: true, claimed: true, actionId, type: action.type },
+    { status: 200 }
   );
 }
