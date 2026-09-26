@@ -31,8 +31,8 @@ cp .env.example .env
 Fill all required variables in `.env` (see [Environment Variables](#environment-variables)).
 
 ```sh
-npm run build        # generates Prisma client
-npx prisma generate  # ensure client is generated
+npm install
+npx prisma generate
 npx prisma migrate dev --name init   # create migration and apply
 npm run seed         # creates admin, command rules, and server config
 npm run register:commands   # registers /status and /report (guild-scoped)
