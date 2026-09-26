@@ -252,33 +252,47 @@ async function updateServerConfig(body: any) {
   }
 
   const mirrorWebhookUrl = body?.mirrorWebhookUrl;
-  if (mirrorWebhookUrl !== null && typeof mirrorWebhookUrl !== "string") {
+  if (
+    mirrorWebhookUrl !== undefined &&
+    mirrorWebhookUrl !== null &&
+    typeof mirrorWebhookUrl !== "string"
+  ) {
     return NextResponse.json(
-      { error: "mirrorWebhookUrl must be null or a string" },
+      { error: "mirrorWebhookUrl must be null, a string, or omitted" },
       { status: 400 }
     );
   }
 
-  if (typeof mirrorWebhookUrl === "string" && mirrorWebhookUrl.trim().length > 0) {
+  let webhookUrlUpdate: string | null | undefined;
+  if (mirrorWebhookUrl === undefined) {
+    webhookUrlUpdate = undefined;
+  } else if (typeof mirrorWebhookUrl === "string") {
     if (mirrorWebhookUrl.length > 2000) {
       return NextResponse.json(
         { error: "mirrorWebhookUrl exceeds maximum length of 2000 characters" },
         { status: 400 }
       );
     }
+    webhookUrlUpdate =
+      mirrorWebhookUrl.trim().length > 0 ? mirrorWebhookUrl.trim() : null;
+  } else {
+    webhookUrlUpdate = null;
   }
 
   const updateData: {
     guildName: string;
     channelId: string | null;
     mirrorType: string | null;
-    mirrorWebhookUrl: string | null;
+    mirrorWebhookUrl?: string | null;
   } = {
     guildName: guildName.trim(),
     channelId: channelId,
     mirrorType,
-    mirrorWebhookUrl: typeof mirrorWebhookUrl === "string" ? mirrorWebhookUrl.trim() : null,
   };
+
+  if (webhookUrlUpdate !== undefined) {
+    updateData.mirrorWebhookUrl = webhookUrlUpdate;
+  }
 
   try {
     const existing = await prisma.discordServerConfig.findUnique({

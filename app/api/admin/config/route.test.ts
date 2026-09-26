@@ -977,4 +977,144 @@ test("admin config API route tests", async (t) => {
     assert.strictEqual(updateArgs.data.guildName, "Trimmed");
     assert.strictEqual(updateArgs.data.mirrorWebhookUrl, "https://discord.com/test");
   });
+
+  await t.test("39. POST server omitted mirrorWebhookUrl preserves existing URL", async () => {
+    setSession(authed);
+    let updateArgs: any = null;
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async (args: any) => {
+      updateArgs = args;
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/existing",
+        updatedAt: new Date(),
+      };
+    });
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.ok(!("mirrorWebhookUrl" in data.serverConfig));
+    assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, true);
+    assert.ok(!("mirrorWebhookUrl" in updateArgs.data));
+  });
+
+  await t.test("40. POST server explicit null clears existing URL", async () => {
+    setSession(authed);
+    let updateArgs: any = null;
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async (args: any) => {
+      updateArgs = args;
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: null,
+        updatedAt: new Date(),
+      };
+    });
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: null,
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, false);
+    assert.strictEqual(updateArgs.data.mirrorWebhookUrl, null);
+  });
+
+  await t.test("41. POST server empty string clears URL", async () => {
+    setSession(authed);
+    let updateArgs: any = null;
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async (args: any) => {
+      updateArgs = args;
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: null,
+        updatedAt: new Date(),
+      };
+    });
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "   ",
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, false);
+    assert.strictEqual(updateArgs.data.mirrorWebhookUrl, null);
+  });
+
+  await t.test("42. POST server non-empty string trims and stores new URL", async () => {
+    setSession(authed);
+    let updateArgs: any = null;
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async (args: any) => {
+      updateArgs = args;
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/new",
+        updatedAt: new Date(),
+      };
+    });
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "  https://discord.com/new  ",
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, true);
+    assert.strictEqual(updateArgs.data.mirrorWebhookUrl, "https://discord.com/new");
+  });
 });
