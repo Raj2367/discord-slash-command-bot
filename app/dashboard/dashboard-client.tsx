@@ -84,6 +84,9 @@ export default function DashboardClient() {
   const [savingRuleId, setSavingRuleId] = useState<string | null>(null);
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [ruleSuccess, setRuleSuccess] = useState<string | null>(null);
+  const [serverSaving, setServerSaving] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverSuccess, setServerSuccess] = useState<string | null>(null);
 
   const fetchDashboardData = async () => {
     try {
@@ -185,6 +188,41 @@ export default function DashboardClient() {
           }
         : prev
     );
+  };
+
+  const handleSaveServer = async (serverConfig: ServerConfig) => {
+    setServerSaving(true);
+    setServerError(null);
+    setServerSuccess(null);
+    try {
+      const res = await fetch("/api/admin/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          type: "server",
+          id: serverConfig.id,
+          guildName: serverConfig.guildName,
+          channelId: serverConfig.channelId,
+          mirrorType: serverConfig.mirrorType,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const updatedServerConfig = data.serverConfig;
+        setConfig((prev) =>
+          prev ? { ...prev, serverConfig: updatedServerConfig } : prev
+        );
+        setServerSuccess("Saved.");
+      } else {
+        setServerError("Failed to save.");
+      }
+    } catch {
+      setServerError("Failed to save.");
+    } finally {
+      setServerSaving(false);
+    }
   };
 
   const handleRetry = async (actionId: string) => {
@@ -329,14 +367,109 @@ export default function DashboardClient() {
       {config && config.serverConfig ? (
         <div style={{ marginTop: "2rem" }}>
           <h2 style={{ fontSize: "1.2em", marginBottom: "0.5rem" }}>Server Configuration</h2>
+          {serverError && (
+            <p style={{ color: "red" }}>{serverError}</p>
+          )}
+          {serverSuccess && (
+            <p style={{ color: "green" }}>{serverSuccess}</p>
+          )}
           <div style={{ padding: "0.5rem", border: "1px solid #ddd", borderRadius: "4px" }}>
-            <ul style={{ listStyle: "none", padding: "0.25rem 0", margin: 0 }}>
-              <li>Guild: {config.serverConfig.guildName}</li>
-              <li>Guild ID: {config.serverConfig.guildId}</li>
-              <li>Channel: {config.serverConfig.channelId || "—"}</li>
-              <li>Mirror Type: {config.serverConfig.mirrorType || "—"}</li>
-              <li>Mirror Configured: {config.serverConfig.mirrorWebhookConfigured ? "Yes" : "No"}</li>
-            </ul>
+            <div style={{ marginBottom: "0.5rem" }}>
+              <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8em", color: "#666" }}>
+                Guild ID (read-only)
+              </label>
+              <input
+                type="text"
+                value={config.serverConfig.guildId}
+                disabled={true}
+                style={{ width: "100%", maxWidth: "400px", padding: "0.25rem" }}
+              />
+            </div>
+            <div style={{ marginBottom: "0.5rem" }}>
+              <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8em", color: "#666" }}>
+                Guild Name
+              </label>
+              <input
+                type="text"
+                value={config.serverConfig.guildName}
+                onChange={(e) =>
+                  setConfig((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          serverConfig: {
+                            ...prev.serverConfig!,
+                            guildName: e.target.value,
+                          },
+                        }
+                      : prev
+                  )
+                }
+                disabled={serverSaving}
+                style={{ width: "100%", maxWidth: "400px", padding: "0.25rem" }}
+              />
+            </div>
+            <div style={{ marginBottom: "0.5rem" }}>
+              <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8em", color: "#666" }}>
+                Channel ID
+              </label>
+              <input
+                type="text"
+                value={config.serverConfig.channelId ?? ""}
+                onChange={(e) =>
+                  setConfig((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          serverConfig: {
+                            ...prev.serverConfig!,
+                            channelId: e.target.value || null,
+                          },
+                        }
+                      : prev
+                  )
+                }
+                disabled={serverSaving}
+                style={{ width: "100%", maxWidth: "400px", padding: "0.25rem" }}
+              />
+            </div>
+            <div style={{ marginBottom: "0.5rem" }}>
+              <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8em", color: "#666" }}>
+                Mirror Type
+              </label>
+              <select
+                value={config.serverConfig.mirrorType ?? ""}
+                onChange={(e) =>
+                  setConfig((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          serverConfig: {
+                            ...prev.serverConfig!,
+                            mirrorType: e.target.value || null,
+                          },
+                        }
+                      : prev
+                  )
+                }
+                disabled={serverSaving}
+                style={{ width: "100%", maxWidth: "400px", padding: "0.25rem" }}
+              >
+                <option value="">None</option>
+                <option value="DISCORD_WEBHOOK">DISCORD_WEBHOOK</option>
+                <option value="SLACK_WEBHOOK">SLACK_WEBHOOK</option>
+              </select>
+            </div>
+            <div style={{ marginBottom: "0.5rem", fontSize: "0.8em", color: "#666" }}>
+              Mirror Configured: {config.serverConfig.mirrorWebhookConfigured ? "Yes" : "No"}
+            </div>
+            <button
+              onClick={() => handleSaveServer(config.serverConfig!)}
+              disabled={serverSaving}
+              style={{ fontSize: "0.8em" }}
+            >
+              {serverSaving ? "Saving..." : "Save Server Configuration"}
+            </button>
           </div>
         </div>
       ) : null}
