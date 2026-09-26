@@ -53,6 +53,10 @@ const setRetryChannelPost = (fn: any) => {
   (prisma as any).__setRetryChannelPost(fn);
 };
 
+const setRetryMirror = (fn: any) => {
+  (prisma as any).__setRetryMirror(fn);
+};
+
 // Helper: configure updateMany to return count=1 and capture args
 const setupClaimSuccess = (capture?: (args: any) => void) => {
   setUpdateMany(async (args: any) => {
@@ -197,9 +201,20 @@ test("admin actions retry API route tests", async (t) => {
   await t.test("7. FAILED MIRROR -> successfully claimed", async () => {
     setSession(authed);
     setFindUnique(async () => makeAction({ type: "MIRROR", status: "FAILED" }));
+    setDiscordServerConfigFindUnique(async () => null);
+    let retryCalled = false;
+    setRetryMirror(async () => {
+      retryCalled = true;
+      return { success: true, attempts: 1 };
+    });
     let updateArgs: any = null;
-    setupClaimSuccess((args) => {
-      updateArgs = args;
+    const calls: any[] = [];
+    setUpdateMany(async (args: any) => {
+      calls.push(args);
+      if (args.data.status === "PENDING") {
+        updateArgs = args;
+      }
+      return { count: 1 };
     });
     const req = new Request("http://localhost/api/admin/actions/retry", {
       method: "POST",
@@ -214,11 +229,16 @@ test("admin actions retry API route tests", async (t) => {
       claimed: true,
       actionId: "act_1",
       type: "MIRROR",
+      status: "FAILED",
     });
     assert.strictEqual(updateArgs.data.status, "PENDING");
     assert.strictEqual(updateArgs.data.attempts, 0);
     assert.strictEqual(updateArgs.data.completedAt, null);
     assert.strictEqual(updateArgs.data.lastError, null);
+    assert.strictEqual(retryCalled, false);
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.status, "FAILED");
+    assert.strictEqual(failCall.data.lastError, "Discord mirror is not configured");
   });
 
   await t.test("8. stale PENDING -> successfully claimed", async () => {
@@ -576,5 +596,292 @@ test("admin actions retry API route tests", async (t) => {
     const failCall = calls[calls.length - 1];
     assert.strictEqual(failCall.data.status, "FAILED");
     assert.strictEqual(failCall.data.lastError, "Unexpected retry error");
+  });
+
+  await t.test("20. valid claimed MIRROR + stored message -> retryMirror success -> MIRROR SUCCESS", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "MIRROR",
+        status: "FAILED",
+        result: { message: "mirror test message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: null,
+      mirrorType: "DISCORD_WEBHOOK",
+      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+    }));
+    let retryInput: any = null;
+    setRetryMirror(async (input: any) => {
+      retryInput = input;
+      return { success: true, attempts: 1 };
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "SUCCESS");
+    assert.strictEqual(data.actionId, "act_1");
+    assert.strictEqual(data.type, "MIRROR");
+    assert.strictEqual(retryInput.webhookUrl, "https://discord.com/api/webhooks/test");
+    assert.strictEqual(retryInput.message, "mirror test message");
+    const successCall = calls[calls.length - 1];
+    assert.strictEqual(successCall.data.status, "SUCCESS");
+    assert.strictEqual(successCall.data.attempts, 1);
+    assert.strictEqual(successCall.data.lastError, null);
+  });
+
+  await t.test("21. retryMirror final failure -> MIRROR FAILED with returned attempts/error", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "MIRROR",
+        status: "FAILED",
+        result: { message: "mirror test message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: null,
+      mirrorType: "DISCORD_WEBHOOK",
+      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+    }));
+    setRetryMirror(async () => {
+      return {
+        success: false,
+        category: "transient",
+        status: 500,
+        error: "Mirror API server error",
+        attempts: 3,
+      };
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.status, "FAILED");
+    assert.strictEqual(failCall.data.attempts, 3);
+    assert.strictEqual(failCall.data.lastError, "Mirror API server error");
+  });
+
+  await t.test("22. missing DiscordServerConfig -> FAILED without retryMirror", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "MIRROR",
+        status: "FAILED",
+        result: { message: "mirror test message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => null);
+    let retryCalled = false;
+    setRetryMirror(async () => {
+      retryCalled = true;
+      return { success: true, attempts: 1 };
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    assert.strictEqual(retryCalled, false);
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.status, "FAILED");
+    assert.strictEqual(failCall.data.lastError, "Discord mirror is not configured");
+  });
+
+  await t.test("23. mirrorType missing/unsupported -> FAILED without retryMirror", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "MIRROR",
+        status: "FAILED",
+        result: { message: "mirror test message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: null,
+      mirrorType: "SLACK_WEBHOOK",
+      mirrorWebhookUrl: "https://hooks.slack.com/test",
+    }));
+    let retryCalled = false;
+    setRetryMirror(async () => {
+      retryCalled = true;
+      return { success: true, attempts: 1 };
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    assert.strictEqual(retryCalled, false);
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.lastError, "Discord mirror is not configured");
+  });
+
+  await t.test("24. missing webhook URL -> FAILED without retryMirror", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "MIRROR",
+        status: "FAILED",
+        result: { message: "mirror test message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: null,
+      mirrorType: "DISCORD_WEBHOOK",
+      mirrorWebhookUrl: null,
+    }));
+    let retryCalled = false;
+    setRetryMirror(async () => {
+      retryCalled = true;
+      return { success: true, attempts: 1 };
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    assert.strictEqual(retryCalled, false);
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.lastError, "Discord mirror is not configured");
+  });
+
+  await t.test("25. invalid/missing stored message -> FAILED without retryMirror", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "MIRROR",
+        status: "FAILED",
+        result: { something: "else" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: null,
+      mirrorType: "DISCORD_WEBHOOK",
+      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+    }));
+    let retryCalled = false;
+    setRetryMirror(async () => {
+      retryCalled = true;
+      return { success: true, attempts: 1 };
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    assert.strictEqual(retryCalled, false);
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.lastError, "Stored mirror snapshot is invalid");
+  });
+
+  await t.test("26. unexpected retryMirror throw -> FAILED with attempts 0", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "MIRROR",
+        status: "FAILED",
+        result: { message: "mirror test message" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: null,
+      mirrorType: "DISCORD_WEBHOOK",
+      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+    }));
+    setRetryMirror(async () => {
+      throw new Error("Unexpected mirror retry error");
+    });
+    const calls = trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.status, "FAILED");
+    const failCall = calls[calls.length - 1];
+    assert.strictEqual(failCall.data.status, "FAILED");
+    assert.strictEqual(failCall.data.attempts, 0);
+    assert.strictEqual(failCall.data.lastError, "Unexpected mirror retry error");
+  });
+
+  await t.test("27. exact stored result.message passed to retryMirror()", async () => {
+    setSession(authed);
+    setFindUnique(async () =>
+      makeAction({
+        type: "MIRROR",
+        status: "FAILED",
+        result: { message: "<<exact stored message>>" },
+      })
+    );
+    setDiscordServerConfigFindUnique(async () => ({
+      guildId: "guild_123",
+      guildName: "Test",
+      channelId: null,
+      mirrorType: "DISCORD_WEBHOOK",
+      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+    }));
+    let retryInput: any = null;
+    setRetryMirror(async (input: any) => {
+      retryInput = input;
+      return { success: true, attempts: 1 };
+    });
+    trackUpdateMany();
+    const req = new Request("http://localhost/api/admin/actions/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actionId: "act_1" }),
+    });
+    await POST(req);
+    assert.strictEqual(retryInput.message, "<<exact stored message>>");
   });
 });

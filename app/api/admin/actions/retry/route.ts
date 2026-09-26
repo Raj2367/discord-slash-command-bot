@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRetrySession } from "@/lib/auth/retry-session";
 import { prisma } from "@/lib/db";
 import { retryChannelPost } from "@/lib/discord/retry-channel-post";
+import { retryMirror } from "@/lib/discord/retry-mirror";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -9,10 +10,16 @@ export const maxDuration = 60;
 const STALE_PENDING_MS = 2 * 60 * 1000;
 
 let _retryChannelPost = retryChannelPost;
+let _retryMirror = retryMirror;
 
 // @ts-ignore — test seam on the mutable prisma object
 (prisma as any).__setRetryChannelPost = (fn: typeof retryChannelPost) => {
   _retryChannelPost = fn;
+};
+
+// @ts-ignore — test seam on the mutable prisma object
+(prisma as any).__setRetryMirror = (fn: typeof retryMirror) => {
+  _retryMirror = fn;
 };
 
 export async function POST(request: Request) {
@@ -241,9 +248,155 @@ export async function POST(request: Request) {
     );
   }
 
-  // Non-CHANNEL_POST (e.g., MIRROR): claim only, no delivery
-  return NextResponse.json(
-    { eligible: true, claimed: true, actionId, type: action.type },
-    { status: 200 }
-  );
+  // Claimed successfully — execute delivery for MIRROR
+  if (action.type === "MIRROR") {
+    const serverConfig = await prisma.discordServerConfig.findUnique({
+      where: { guildId: action.interactionLog.guildId },
+    });
+
+    const mirrorType = serverConfig?.mirrorType;
+    const mirrorWebhookUrl = serverConfig?.mirrorWebhookUrl;
+
+    if (mirrorType !== "DISCORD_WEBHOOK" || !mirrorWebhookUrl) {
+      await prisma.actionRecord.updateMany({
+        where: {
+          interactionLogId: action.interactionLogId,
+          type: "MIRROR",
+        },
+        data: {
+          status: "FAILED",
+          attempts: 0,
+          completedAt: new Date(),
+          lastError: "Discord mirror is not configured",
+        },
+      });
+      return NextResponse.json(
+        {
+          eligible: true,
+          claimed: true,
+          actionId,
+          type: "MIRROR",
+          status: "FAILED",
+        },
+        { status: 200 }
+      );
+    }
+
+    const rawResult = action.result;
+    const message =
+      rawResult &&
+      typeof rawResult === "object" &&
+      rawResult !== null &&
+      !Array.isArray(rawResult) &&
+      typeof (rawResult as Record<string, unknown>).message === "string"
+        ? (rawResult as { message: string }).message
+        : null;
+
+    if (!message) {
+      await prisma.actionRecord.updateMany({
+        where: {
+          interactionLogId: action.interactionLogId,
+          type: "MIRROR",
+        },
+        data: {
+          status: "FAILED",
+          attempts: 0,
+          completedAt: new Date(),
+          lastError: "Stored mirror snapshot is invalid",
+        },
+      });
+      return NextResponse.json(
+        {
+          eligible: true,
+          claimed: true,
+          actionId,
+          type: "MIRROR",
+          status: "FAILED",
+        },
+        { status: 200 }
+      );
+    }
+
+    let mirrorResult;
+    try {
+      mirrorResult = await _retryMirror({
+        webhookUrl: mirrorWebhookUrl,
+        message,
+      });
+    } catch (err) {
+      await prisma.actionRecord.updateMany({
+        where: {
+          interactionLogId: action.interactionLogId,
+          type: "MIRROR",
+        },
+        data: {
+          status: "FAILED",
+          attempts: 0,
+          completedAt: new Date(),
+          lastError:
+            err instanceof Error
+              ? err.message
+              : "Mirror retry failed",
+        },
+      });
+      return NextResponse.json(
+        {
+          eligible: true,
+          claimed: true,
+          actionId,
+          type: "MIRROR",
+          status: "FAILED",
+        },
+        { status: 200 }
+      );
+    }
+
+    if (mirrorResult.success) {
+      await prisma.actionRecord.updateMany({
+        where: {
+          interactionLogId: action.interactionLogId,
+          type: "MIRROR",
+        },
+        data: {
+          status: "SUCCESS",
+          attempts: mirrorResult.attempts,
+          completedAt: new Date(),
+          lastError: null,
+        },
+      });
+      return NextResponse.json(
+        {
+          eligible: true,
+          claimed: true,
+          actionId,
+          type: "MIRROR",
+          status: "SUCCESS",
+        },
+        { status: 200 }
+      );
+    }
+
+    await prisma.actionRecord.updateMany({
+      where: {
+        interactionLogId: action.interactionLogId,
+        type: "MIRROR",
+      },
+      data: {
+        status: "FAILED",
+        attempts: mirrorResult.attempts,
+        completedAt: new Date(),
+        lastError: mirrorResult.error || "Discord mirror delivery failed",
+      },
+    });
+    return NextResponse.json(
+      {
+        eligible: true,
+        claimed: true,
+        actionId,
+        type: "MIRROR",
+        status: "FAILED",
+      },
+      { status: 200 }
+    );
+  }
 }
