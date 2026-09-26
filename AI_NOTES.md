@@ -66,3 +66,33 @@ Created `README.md` with complete local setup, environment variable documentatio
 - **Cleaner test seams**: The current test mocking uses mutable Prisma object replacement (`prisma.discordServerConfig.findFirst = mockFn`). A dedicated test fixture or Prisma mock client (e.g., `--data-proxy` mock or `prismock`) would provide more robust, isolated testing.
 - **Dashboard UX improvements**: Add explicit error notifications when actions fail, and a retry button with confirmation to prevent accidental double-retries.
 - **Additional observability**: Structured logging is server-side JSON. Adding request IDs for tracing through the `after()` processing pipeline would aid debugging in production.
+
+## 7. Hardest Production Bug: `/status` "Application Did Not Respond" Then 404
+
+**Initial symptom**: `/status` showed "The application did not respond" — the ACK was delayed past Discord's 3-second window.
+
+**AI's initial suspect**: The `after()` wrapper in `lib/discord/after.ts` was falling back to `Promise.resolve().then(task)`, running `processInteraction` synchronously and delaying the HTTP response.
+
+**Evidence disproving it**: Temporary timing instrumentation showed the three sequential database queries alone accounted for the entire delay:
+- Total pre-ACK: 4361ms
+  - `discordServerConfig.findUnique`: 2459ms
+  - `commandRule.findUnique`: 237ms
+  - `persistInteraction`: 1664ms
+
+Vercel Function was in `iad1` while the Neon database was in `ap-southeast-1`. Cross-region latency accumulated across all three sequential queries. `after()` was correctly non-awaited — it was not the bottleneck.
+
+**Fix for the delay**: Moved Vercel Functions to `sin1` (Singapore). Pre-ACK dropped to 1050ms; the ACK then succeeded.
+
+**New problem: HTTP 404 on DISCORD_RESPONSE**: After the region fix, the initial ACK succeeded but the post-ACK PATCH returned 404. Production evidence traced step by step:
+- Stored `ActionRecord.result.message` = `"Bot is operational and online."` (correct)
+- Discord endpoint shape (`/webhooks/{app_id}/{token}/messages/@original`) was correct
+- The `application_id` in the Discord interaction payload was `1552661543412568164`
+- The production `DISCORD_APPLICATION_ID` env var did not match — it was incorrect
+
+**Root cause**: Wrong `DISCORD_APPLICATION_ID` in Vercel production. Correct value: `1552661543412568164`.
+
+**Final fix**: Updated `DISCORD_APPLICATION_ID` env var in Vercel and redeployed.
+
+**Final live verification** — all passed: `/status`, `/report`, channel post, webhook mirror, retry-on-failure, manual mirror retry, invalid-signature 401, stale-timestamp 401, admin dashboard/login.
+
+**Attribution**: Logs, timing measurements, database inspection of action records, and live Discord/Vercel testing were used to verify each hypothesis in sequence. The AI did not autonomously diagnose the final root cause — each conclusion was guided by observed production evidence.
