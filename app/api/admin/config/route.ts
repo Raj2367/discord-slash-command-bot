@@ -31,10 +31,21 @@ export async function GET() {
           guildName: true,
           channelId: true,
           mirrorType: true,
-          mirrorWebhookUrl: true,
         },
       }),
     ]);
+
+    let hasWebhook = false;
+    if (serverConfig) {
+      const webhookCheck = await prisma.discordServerConfig.findFirst({
+        where: {
+          id: serverConfig.id,
+          mirrorWebhookUrl: { not: null },
+        },
+        select: { id: true },
+      });
+      hasWebhook = !!webhookCheck;
+    }
 
     const safeServerConfig = serverConfig
       ? {
@@ -43,9 +54,7 @@ export async function GET() {
           guildName: serverConfig.guildName,
           channelId: serverConfig.channelId,
           mirrorType: serverConfig.mirrorType,
-          mirrorWebhookConfigured:
-            !!serverConfig.mirrorWebhookUrl &&
-            serverConfig.mirrorWebhookUrl.length > 0,
+          mirrorWebhookConfigured: hasWebhook,
         }
       : null;
 

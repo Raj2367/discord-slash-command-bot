@@ -116,14 +116,19 @@ test("admin config API route tests", async (t) => {
         updatedAt: new Date(),
       },
     ]);
-    setServerConfigFindFirst(async () => ({
-      id: "config_1",
-      guildId: "guild_123",
-      guildName: "Test Server",
-      channelId: "chan_123",
-      mirrorType: "DISCORD_WEBHOOK",
-      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
-    }));
+    setServerConfigFindFirst(async (args: any) => {
+      if (args?.where?.id) {
+        return { id: "config_1" };
+      }
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+      };
+    });
     const res = await GET();
     assert.strictEqual(res.status, 200);
     const data = await res.json();
@@ -167,14 +172,19 @@ test("admin config API route tests", async (t) => {
   await t.test("4. exact safe server config fields returned", async () => {
     setSession(authed);
     setCommandRuleFindMany(async () => []);
-    setServerConfigFindFirst(async () => ({
-      id: "config_1",
-      guildId: "guild_123",
-      guildName: "Test Server",
-      channelId: "chan_123",
-      mirrorType: "DISCORD_WEBHOOK",
-      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
-    }));
+    setServerConfigFindFirst(async (args: any) => {
+      if (args?.where?.id) {
+        return { id: "config_1" };
+      }
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+      };
+    });
     const res = await GET();
     const data = await res.json();
     const config = data.serverConfig;
@@ -192,14 +202,19 @@ test("admin config API route tests", async (t) => {
   await t.test("5. mirrorWebhookUrl is never returned", async () => {
     setSession(authed);
     setCommandRuleFindMany(async () => []);
-    setServerConfigFindFirst(async () => ({
-      id: "config_1",
-      guildId: "guild_123",
-      guildName: "Test Server",
-      channelId: "chan_123",
-      mirrorType: "DISCORD_WEBHOOK",
-      mirrorWebhookUrl: "https://discord.com/api/webhooks/secret",
-    }));
+    setServerConfigFindFirst(async (args: any) => {
+      if (args?.where?.id) {
+        return { id: "config_1" };
+      }
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/secret",
+      };
+    });
     const res = await GET();
     const data = await res.json();
     const serialized = JSON.stringify(data);
@@ -213,14 +228,18 @@ test("admin config API route tests", async (t) => {
   await t.test("6. mirrorWebhookConfigured = true when URL exists", async () => {
     setSession(authed);
     setCommandRuleFindMany(async () => []);
-    setServerConfigFindFirst(async () => ({
-      id: "config_1",
-      guildId: "guild_123",
-      guildName: "Test Server",
-      channelId: "chan_123",
-      mirrorType: "DISCORD_WEBHOOK",
-      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
-    }));
+    setServerConfigFindFirst(async (args: any) => {
+      if (args?.where?.id) {
+        return { id: "config_1" };
+      }
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+      };
+    });
     const res = await GET();
     const data = await res.json();
     assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, true);
@@ -229,14 +248,18 @@ test("admin config API route tests", async (t) => {
   await t.test("7. mirrorWebhookConfigured = false when URL is null", async () => {
     setSession(authed);
     setCommandRuleFindMany(async () => []);
-    setServerConfigFindFirst(async () => ({
-      id: "config_1",
-      guildId: "guild_123",
-      guildName: "Test Server",
-      channelId: "chan_123",
-      mirrorType: "DISCORD_WEBHOOK",
-      mirrorWebhookUrl: null,
-    }));
+    setServerConfigFindFirst(async (args: any) => {
+      if (args?.where?.id) {
+        return null;
+      }
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+      };
+    });
     const res = await GET();
     const data = await res.json();
     assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, false);
@@ -245,14 +268,18 @@ test("admin config API route tests", async (t) => {
   await t.test("8. mirrorWebhookConfigured = false when URL is empty string", async () => {
     setSession(authed);
     setCommandRuleFindMany(async () => []);
-    setServerConfigFindFirst(async () => ({
-      id: "config_1",
-      guildId: "guild_123",
-      guildName: "Test Server",
-      channelId: "chan_123",
-      mirrorType: "DISCORD_WEBHOOK",
-      mirrorWebhookUrl: "",
-    }));
+    setServerConfigFindFirst(async (args: any) => {
+      if (args?.where?.id) {
+        return null;
+      }
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+      };
+    });
     const res = await GET();
     const data = await res.json();
     assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, false);
@@ -276,6 +303,29 @@ test("admin config API route tests", async (t) => {
     const res = await GET();
     const data = await res.json();
     assert.strictEqual(data.serverConfig, null);
+  });
+
+  await t.test("10b. GET Prisma select does NOT contain mirrorWebhookUrl", async () => {
+    setSession(authed);
+    setCommandRuleFindMany(async () => []);
+    let selectArgs: any = null;
+    setServerConfigFindFirst(async (args: any) => {
+      if (args?.where?.id) {
+        return null;
+      }
+      if (args?.select) {
+        selectArgs = args.select;
+      }
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+      };
+    });
+    await GET();
+    assert.ok(!("mirrorWebhookUrl" in selectArgs));
   });
 
   await t.test("11. GET and POST are exported, PUT and DELETE are not", async () => {
