@@ -87,6 +87,8 @@ export default function DashboardClient() {
   const [serverSaving, setServerSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverSuccess, setServerSuccess] = useState<string | null>(null);
+  const [newWebhookUrl, setNewWebhookUrl] = useState("");
+  const [clearWebhook, setClearWebhook] = useState(false);
 
   const fetchDashboardData = async () => {
     try {
@@ -194,18 +196,33 @@ export default function DashboardClient() {
     setServerSaving(true);
     setServerError(null);
     setServerSuccess(null);
+    const body: {
+      type: string;
+      id: string;
+      guildName: string;
+      channelId: string | null;
+      mirrorType: string | null;
+      mirrorWebhookUrl?: string | null;
+    } = {
+      type: "server",
+      id: serverConfig.id,
+      guildName: serverConfig.guildName,
+      channelId: serverConfig.channelId,
+      mirrorType: serverConfig.mirrorType,
+    };
+
+    if (clearWebhook) {
+      body.mirrorWebhookUrl = null;
+    } else if (newWebhookUrl.trim().length > 0) {
+      body.mirrorWebhookUrl = newWebhookUrl.trim();
+    }
+
     try {
       const res = await fetch("/api/admin/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({
-          type: "server",
-          id: serverConfig.id,
-          guildName: serverConfig.guildName,
-          channelId: serverConfig.channelId,
-          mirrorType: serverConfig.mirrorType,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (res.ok) {
@@ -214,6 +231,8 @@ export default function DashboardClient() {
         setConfig((prev) =>
           prev ? { ...prev, serverConfig: updatedServerConfig } : prev
         );
+        setNewWebhookUrl("");
+        setClearWebhook(false);
         setServerSuccess("Saved.");
       } else {
         setServerError("Failed to save.");
@@ -462,6 +481,30 @@ export default function DashboardClient() {
             </div>
             <div style={{ marginBottom: "0.5rem", fontSize: "0.8em", color: "#666" }}>
               Mirror Configured: {config.serverConfig.mirrorWebhookConfigured ? "Yes" : "No"}
+            </div>
+            <div style={{ marginBottom: "0.5rem" }}>
+              <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8em", color: "#666" }}>
+                New mirror webhook URL
+              </label>
+              <input
+                type="text"
+                value={newWebhookUrl}
+                onChange={(e) => setNewWebhookUrl(e.target.value)}
+                disabled={serverSaving || clearWebhook}
+                placeholder="Enter a new webhook URL to replace"
+                style={{ width: "100%", maxWidth: "400px", padding: "0.25rem" }}
+              />
+            </div>
+            <div style={{ marginBottom: "0.5rem" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8em", color: "#666" }}>
+                <input
+                  type="checkbox"
+                  checked={clearWebhook}
+                  onChange={(e) => setClearWebhook(e.target.checked)}
+                  disabled={serverSaving}
+                />
+                Clear webhook
+              </label>
             </div>
             <button
               onClick={() => handleSaveServer(config.serverConfig!)}
