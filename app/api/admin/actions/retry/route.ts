@@ -95,7 +95,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // Claimed successfully — execute delivery for CHANNEL_POST only
+  // Claimed successfully — execute delivery for the claimed action (CHANNEL_POST or MIRROR)
   if (action.type === "CHANNEL_POST") {
     const serverConfig = await prisma.discordServerConfig.findUnique({
       where: { guildId: action.interactionLog.guildId },
