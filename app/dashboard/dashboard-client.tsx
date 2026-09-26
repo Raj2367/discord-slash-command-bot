@@ -81,6 +81,9 @@ export default function DashboardClient() {
   const [config, setConfig] = useState<AdminConfigData | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [configError, setConfigError] = useState<string | null>(null);
+  const [savingRuleId, setSavingRuleId] = useState<string | null>(null);
+  const [ruleError, setRuleError] = useState<string | null>(null);
+  const [ruleSuccess, setRuleSuccess] = useState<string | null>(null);
 
   const fetchDashboardData = async () => {
     try {
@@ -112,6 +115,76 @@ export default function DashboardClient() {
     } finally {
       setConfigLoading(false);
     }
+  };
+
+  const handleSaveCommand = async (rule: CommandRuleConfig) => {
+    setSavingRuleId(rule.id);
+    setRuleError(null);
+    setRuleSuccess(null);
+    try {
+      const res = await fetch("/api/admin/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          type: "command",
+          id: rule.id,
+          enabled: rule.enabled,
+          responseText: rule.responseText,
+          mirrorEnabled: rule.mirrorEnabled,
+          channelPostEnabled: rule.channelPostEnabled,
+          aiEnabled: rule.aiEnabled,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const updatedRule = data.commandRule;
+        setConfig((prev) =>
+          prev
+            ? {
+                ...prev,
+                commandRules: prev.commandRules.map((r) =>
+                  r.id === updatedRule.id ? updatedRule : r
+                ),
+              }
+            : prev
+        );
+        setRuleSuccess("Saved.");
+      } else {
+        setRuleError("Failed to save.");
+      }
+    } catch {
+      setRuleError("Failed to save.");
+    } finally {
+      setSavingRuleId(null);
+    }
+  };
+
+  const toggleCheckbox = (rule: CommandRuleConfig, field: keyof Pick<CommandRuleConfig, "enabled" | "mirrorEnabled" | "channelPostEnabled" | "aiEnabled">) => {
+    setConfig((prev) =>
+      prev
+        ? {
+            ...prev,
+            commandRules: prev.commandRules.map((r) =>
+              r.id === rule.id ? { ...r, [field]: !r[field] } : r
+            ),
+          }
+        : prev
+    );
+  };
+
+  const updateResponseText = (rule: CommandRuleConfig, value: string) => {
+    setConfig((prev) =>
+      prev
+        ? {
+            ...prev,
+            commandRules: prev.commandRules.map((r) =>
+              r.id === rule.id ? { ...r, responseText: value } : r
+            ),
+          }
+        : prev
+    );
   };
 
   const handleRetry = async (actionId: string) => {
@@ -183,19 +256,73 @@ export default function DashboardClient() {
       ) : config ? (
         <div style={{ marginTop: "2rem" }}>
           <h2 style={{ fontSize: "1.2em", marginBottom: "0.5rem" }}>Command Configuration</h2>
-          {config.commandRules.map((rule) => (
-            <div key={rule.id} style={{ marginBottom: "1rem", padding: "0.5rem", border: "1px solid #ddd", borderRadius: "4px" }}>
-              <strong>{rule.commandName}</strong>
-              <ul style={{ listStyle: "none", padding: "0.25rem 0", margin: 0 }}>
-                <li>Enabled: {rule.enabled ? "Yes" : "No"}</li>
-                <li>Response: {rule.responseText}</li>
-                <li>Mirror: {rule.mirrorEnabled ? "Yes" : "No"}</li>
-                <li>Channel Post: {rule.channelPostEnabled ? "Yes" : "No"}</li>
-                <li>AI: {rule.aiEnabled ? "Yes" : "No"}</li>
-                <li>Updated: {new Date(rule.updatedAt).toLocaleString()}</li>
-              </ul>
-            </div>
-          ))}
+          {ruleError && (
+            <p style={{ color: "red" }}>{ruleError}</p>
+          )}
+          {ruleSuccess && (
+            <p style={{ color: "green" }}>{ruleSuccess}</p>
+          )}
+          {config.commandRules.map((rule) => {
+            const saving = savingRuleId === rule.id;
+            return (
+              <div key={rule.id} style={{ marginBottom: "1rem", padding: "0.5rem", border: "1px solid #ddd", borderRadius: "4px" }}>
+                <strong>{rule.commandName}</strong>
+                <div style={{ marginTop: "0.5rem" }}>
+                  <label style={{ display: "block", marginBottom: "0.25rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={rule.enabled}
+                      onChange={() => toggleCheckbox(rule, "enabled")}
+                      disabled={saving}
+                    />{" Enabled"}
+                  </label>
+                  <label style={{ display: "block", marginBottom: "0.25rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={rule.mirrorEnabled}
+                      onChange={() => toggleCheckbox(rule, "mirrorEnabled")}
+                      disabled={saving}
+                    />{" Mirror"}
+                  </label>
+                  <label style={{ display: "block", marginBottom: "0.25rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={rule.channelPostEnabled}
+                      onChange={() => toggleCheckbox(rule, "channelPostEnabled")}
+                      disabled={saving}
+                    />{" Channel Post"}
+                  </label>
+                  <label style={{ display: "block", marginBottom: "0.25rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={rule.aiEnabled}
+                      onChange={() => toggleCheckbox(rule, "aiEnabled")}
+                      disabled={saving}
+                    />{" AI"}
+                  </label>
+                  <div style={{ marginBottom: "0.25rem" }}>
+                    <textarea
+                      value={rule.responseText}
+                      onChange={(e) => updateResponseText(rule, e.target.value)}
+                      disabled={saving}
+                      rows={3}
+                      style={{ width: "100%", maxWidth: "400px" }}
+                    />
+                  </div>
+                  <div style={{ marginBottom: "0.25rem", fontSize: "0.8em", color: "#666" }}>
+                    Updated: {new Date(rule.updatedAt).toLocaleString()}
+                  </div>
+                  <button
+                    onClick={() => handleSaveCommand(rule)}
+                    disabled={saving}
+                    style={{ fontSize: "0.8em" }}
+                  >
+                    {saving ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
