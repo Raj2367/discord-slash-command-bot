@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 config();
+import { exit } from "process";
 
 const applicationId = process.env.DISCORD_APPLICATION_ID;
 const guildId = process.env.DISCORD_GUILD_ID;
@@ -37,24 +38,31 @@ const commands = [
   },
 ];
 
-const url = `https://discord.com/api/v10/applications/${applicationId}/guilds/${guildId}/commands`;
+async function main() {
+  const url = `https://discord.com/api/v10/applications/${applicationId}/guilds/${guildId}/commands`;
 
-const res = await fetch(url, {
-  method: "PUT",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bot ${botToken}`,
-  },
-  body: JSON.stringify(commands),
-});
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bot ${botToken}`,
+    },
+    body: JSON.stringify(commands),
+  });
 
-if (!res.ok) {
-  throw new Error(`Discord API error: ${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    throw new Error(`Discord API error: ${res.status} ${res.statusText}`);
+  }
+
+  const registered = await res.json();
+  const names = Array.isArray(registered)
+    ? registered.map((c: any) => c.name).join(", ")
+    : "unknown";
+
+  console.log(`Registered commands for guild ${guildId}: ${names}`);
 }
 
-const registered = await res.json();
-const names = Array.isArray(registered)
-  ? registered.map((c: any) => c.name).join(", ")
-  : "unknown";
-
-console.log(`Registered commands for guild ${guildId}: ${names}`);
+main().catch((err) => {
+  console.error(err);
+  exit(1);
+});
