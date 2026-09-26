@@ -31,6 +31,31 @@ export interface DashboardData {
   interactions: InteractionLog[];
 }
 
+export interface CommandRuleConfig {
+  id: string;
+  commandName: string;
+  enabled: boolean;
+  responseText: string;
+  mirrorEnabled: boolean;
+  channelPostEnabled: boolean;
+  aiEnabled: boolean;
+  updatedAt: string;
+}
+
+export interface ServerConfig {
+  id: string;
+  guildId: string;
+  guildName: string;
+  channelId: string | null;
+  mirrorType: string | null;
+  mirrorWebhookConfigured: boolean;
+}
+
+export interface AdminConfigData {
+  commandRules: CommandRuleConfig[];
+  serverConfig: ServerConfig | null;
+}
+
 const POLL_INTERVAL_MS = 5000;
 const STALE_PENDING_MS = 2 * 60 * 1000;
 
@@ -53,6 +78,9 @@ export default function DashboardClient() {
   const [error, setError] = useState<string | null>(null);
   const [retryingActionId, setRetryingActionId] = useState<string | null>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [config, setConfig] = useState<AdminConfigData | null>(null);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
 
   const fetchDashboardData = async () => {
     try {
@@ -67,6 +95,22 @@ export default function DashboardClient() {
       setError("Failed to load dashboard data");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchConfig = async () => {
+    try {
+      const res = await fetch("/api/admin/config");
+      if (!res.ok) {
+        throw new Error(`API returned status ${res.status}`);
+      }
+      const json: AdminConfigData = await res.json();
+      setConfig(json);
+      setConfigError(null);
+    } catch (err) {
+      setConfigError("Failed to load configuration");
+    } finally {
+      setConfigLoading(false);
     }
   };
 
@@ -100,6 +144,7 @@ export default function DashboardClient() {
 
   useEffect(() => {
     fetchDashboardData();
+    fetchConfig();
     const interval = setInterval(fetchDashboardData, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
@@ -130,6 +175,44 @@ export default function DashboardClient() {
       {retryError && (
         <p style={{ color: "orange", marginTop: "1rem" }}>{retryError}</p>
       )}
+
+      {configLoading ? (
+        <p>Loading configuration...</p>
+      ) : configError ? (
+        <p style={{ color: "red" }}>{configError}</p>
+      ) : config ? (
+        <div style={{ marginTop: "2rem" }}>
+          <h2 style={{ fontSize: "1.2em", marginBottom: "0.5rem" }}>Command Configuration</h2>
+          {config.commandRules.map((rule) => (
+            <div key={rule.id} style={{ marginBottom: "1rem", padding: "0.5rem", border: "1px solid #ddd", borderRadius: "4px" }}>
+              <strong>{rule.commandName}</strong>
+              <ul style={{ listStyle: "none", padding: "0.25rem 0", margin: 0 }}>
+                <li>Enabled: {rule.enabled ? "Yes" : "No"}</li>
+                <li>Response: {rule.responseText}</li>
+                <li>Mirror: {rule.mirrorEnabled ? "Yes" : "No"}</li>
+                <li>Channel Post: {rule.channelPostEnabled ? "Yes" : "No"}</li>
+                <li>AI: {rule.aiEnabled ? "Yes" : "No"}</li>
+                <li>Updated: {new Date(rule.updatedAt).toLocaleString()}</li>
+              </ul>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {config && config.serverConfig ? (
+        <div style={{ marginTop: "2rem" }}>
+          <h2 style={{ fontSize: "1.2em", marginBottom: "0.5rem" }}>Server Configuration</h2>
+          <div style={{ padding: "0.5rem", border: "1px solid #ddd", borderRadius: "4px" }}>
+            <ul style={{ listStyle: "none", padding: "0.25rem 0", margin: 0 }}>
+              <li>Guild: {config.serverConfig.guildName}</li>
+              <li>Guild ID: {config.serverConfig.guildId}</li>
+              <li>Channel: {config.serverConfig.channelId || "—"}</li>
+              <li>Mirror Type: {config.serverConfig.mirrorType || "—"}</li>
+              <li>Mirror Configured: {config.serverConfig.mirrorWebhookConfigured ? "Yes" : "No"}</li>
+            </ul>
+          </div>
+        </div>
+      ) : null}
 
       {data.interactions.length === 0 ? (
         <p>No interactions found.</p>
