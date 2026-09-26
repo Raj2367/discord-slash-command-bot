@@ -9,6 +9,8 @@ const originalCommandRuleFindMany = prisma.commandRule.findMany;
 const originalCommandRuleFindUnique = prisma.commandRule.findUnique;
 const originalCommandRuleUpdate = prisma.commandRule.update;
 const originalServerConfigFindFirst = prisma.discordServerConfig.findFirst;
+const originalServerConfigFindUnique = (prisma as any).discordServerConfig?.findUnique;
+const originalServerConfigUpdate = (prisma as any).discordServerConfig?.update;
 
 const setSession = (fn: any) => {
   __setGetSession(fn);
@@ -36,6 +38,20 @@ const setServerConfigFindFirst = (fn: any) => {
   (prisma as any).discordServerConfig.findFirst = fn;
 };
 
+const setServerConfigFindUnique = (fn: any) => {
+  if (!(prisma as any).discordServerConfig) {
+    (prisma as any).discordServerConfig = {};
+  }
+  (prisma as any).discordServerConfig.findUnique = fn;
+};
+
+const setServerConfigUpdate = (fn: any) => {
+  if (!(prisma as any).discordServerConfig) {
+    (prisma as any).discordServerConfig = {};
+  }
+  (prisma as any).discordServerConfig.update = fn;
+};
+
 test("admin config API route tests", async (t) => {
   t.after(() => {
     __setGetSession(originalGetAdminSession);
@@ -44,7 +60,14 @@ test("admin config API route tests", async (t) => {
     prisma.commandRule.update = originalCommandRuleUpdate;
     if (originalServerConfigFindFirst) {
       (prisma as any).discordServerConfig.findFirst = originalServerConfigFindFirst;
-    } else {
+    }
+    if (originalServerConfigFindUnique) {
+      (prisma as any).discordServerConfig.findUnique = originalServerConfigFindUnique;
+    }
+    if (originalServerConfigUpdate) {
+      (prisma as any).discordServerConfig.update = originalServerConfigUpdate;
+    }
+    if (!originalServerConfigFindFirst && !originalServerConfigFindUnique && !originalServerConfigUpdate) {
       delete (prisma as any).discordServerConfig;
     }
   });
@@ -308,7 +331,7 @@ test("admin config API route tests", async (t) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        type: "server",
+        type: "invalid_type",
         id: "rule_1",
         enabled: true,
         responseText: "test",
@@ -576,5 +599,382 @@ test("admin config API route tests", async (t) => {
     assert.strictEqual(res.status, 500);
     const data = await res.json();
     assert.strictEqual(data.error, "Failed to update configuration");
+  });
+
+  await t.test("24. POST server unauthenticated -> 401", async () => {
+    setSession(async () => null);
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 401);
+  });
+
+  await t.test("25. POST server empty guildName -> 400", async () => {
+    setSession(authed);
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "   ",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("26. POST server guildName over 200 chars -> 400", async () => {
+    setSession(authed);
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "x".repeat(201),
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("27. POST server invalid channelId type -> 400", async () => {
+    setSession(authed);
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Test Server",
+        channelId: 123,
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: null,
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("28. POST server invalid mirrorType -> 400", async () => {
+    setSession(authed);
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "INVALID_TYPE",
+        mirrorWebhookUrl: null,
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("29. POST server invalid mirrorWebhookUrl type -> 400", async () => {
+    setSession(authed);
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: 123,
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("30. POST server mirrorWebhookUrl over 2000 chars -> 400", async () => {
+    setSession(authed);
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/" + "x".repeat(2000),
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("31. POST server unknown config -> 404", async () => {
+    setSession(authed);
+    setServerConfigFindUnique(async () => null);
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Test Server",
+        channelId: "chan_123",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 404);
+  });
+
+  await t.test("32. POST server valid update -> 200", async () => {
+    setSession(authed);
+    let updateArgs: any = null;
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async (args: any) => {
+      updateArgs = args;
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Updated Server",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/secret",
+        updatedAt: new Date(),
+      };
+    });
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated Server",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/secret",
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.ok("serverConfig" in data);
+    const config = data.serverConfig;
+    assert.strictEqual(config.id, "config_1");
+    assert.strictEqual(config.guildId, "guild_123");
+    assert.strictEqual(config.guildName, "Updated Server");
+    assert.strictEqual(config.channelId, "chan_456");
+    assert.strictEqual(config.mirrorType, "DISCORD_WEBHOOK");
+    assert.ok(config.updatedAt);
+  });
+
+  await t.test("33. POST server verifies four editable fields reach Prisma update", async () => {
+    setSession(authed);
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    let updateArgs: any = null;
+    setServerConfigUpdate(async (args: any) => {
+      updateArgs = args;
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/test",
+        updatedAt: new Date(),
+      };
+    });
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/test",
+      }),
+    });
+    await POST(req);
+    const dataFields = Object.keys(updateArgs.data).sort();
+    assert.deepStrictEqual(dataFields, [
+      "channelId",
+      "guildName",
+      "mirrorType",
+      "mirrorWebhookUrl",
+    ]);
+    assert.strictEqual(updateArgs.where.id, "config_1");
+    assert.ok(!("id" in updateArgs.data));
+    assert.ok(!("guildId" in updateArgs.data));
+    assert.ok(!("createdAt" in updateArgs.data));
+  });
+
+  await t.test("34. POST server response NEVER contains mirrorWebhookUrl", async () => {
+    setSession(authed);
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async () => ({
+      id: "config_1",
+      guildId: "guild_123",
+      guildName: "Updated",
+      channelId: "chan_456",
+      mirrorType: "DISCORD_WEBHOOK",
+      mirrorWebhookUrl: "https://discord.com/secret-webhook-url",
+      updatedAt: new Date(),
+    }));
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/secret-webhook-url",
+      }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.ok("mirrorWebhookConfigured" in data.serverConfig);
+    assert.ok(!("mirrorWebhookUrl" in data.serverConfig));
+    const serialized = JSON.stringify(data);
+    assert.ok(!serialized.includes("secret-webhook-url"));
+  });
+
+  await t.test("35. POST server URL present -> mirrorWebhookConfigured true", async () => {
+    setSession(authed);
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async () => ({
+      id: "config_1",
+      guildId: "guild_123",
+      guildName: "Updated",
+      channelId: "chan_456",
+      mirrorType: "DISCORD_WEBHOOK",
+      mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+      updatedAt: new Date(),
+    }));
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/api/webhooks/test",
+      }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, true);
+  });
+
+  await t.test("36. POST server URL null -> mirrorWebhookConfigured false", async () => {
+    setSession(authed);
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async () => ({
+      id: "config_1",
+      guildId: "guild_123",
+      guildName: "Updated",
+      channelId: "chan_456",
+      mirrorType: null,
+      mirrorWebhookUrl: null,
+      updatedAt: new Date(),
+    }));
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: null,
+        mirrorWebhookUrl: null,
+      }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.serverConfig.mirrorWebhookConfigured, false);
+  });
+
+  await t.test("37. POST server database failure -> 500 generic error", async () => {
+    setSession(authed);
+    setServerConfigFindUnique(async () => {
+      throw new Error("Prisma connection failed");
+    });
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "Updated",
+        channelId: "chan_456",
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: null,
+      }),
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 500);
+    const data = await res.json();
+    assert.strictEqual(data.error, "Failed to update configuration");
+  });
+
+  await t.test("38. POST server trims guildName and mirrorWebhookUrl", async () => {
+    setSession(authed);
+    let updateArgs: any = null;
+    setServerConfigFindUnique(async () => ({ id: "config_1", guildId: "guild_123" }));
+    setServerConfigUpdate(async (args: any) => {
+      updateArgs = args;
+      return {
+        id: "config_1",
+        guildId: "guild_123",
+        guildName: "Trimmed",
+        channelId: null,
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "https://discord.com/test",
+        updatedAt: new Date(),
+      };
+    });
+    const req = new Request("http://localhost/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "server",
+        id: "config_1",
+        guildName: "  Trimmed  ",
+        channelId: null,
+        mirrorType: "DISCORD_WEBHOOK",
+        mirrorWebhookUrl: "  https://discord.com/test  ",
+      }),
+    });
+    await POST(req);
+    assert.strictEqual(updateArgs.data.guildName, "Trimmed");
+    assert.strictEqual(updateArgs.data.mirrorWebhookUrl, "https://discord.com/test");
   });
 });

@@ -74,13 +74,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (body?.type !== "command") {
-    return NextResponse.json(
-      { error: "Invalid request: type must be 'command'" },
-      { status: 400 }
-    );
+  if (body?.type === "command") {
+    return updateCommandRule(body);
   }
 
+  if (body?.type === "server") {
+    return updateServerConfig(body);
+  }
+
+  return NextResponse.json(
+    { error: "Invalid request: type must be 'command' or 'server'" },
+    { status: 400 }
+  );
+}
+
+async function updateCommandRule(body: any) {
   const id = body?.id;
   if (typeof id !== "string" || !id) {
     return NextResponse.json(
@@ -175,6 +183,143 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       { commandRule: updated },
+      { status: 200 }
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "Failed to update configuration" },
+      { status: 500 }
+    );
+  }
+}
+
+async function updateServerConfig(body: any) {
+  const id = body?.id;
+  if (typeof id !== "string" || !id) {
+    return NextResponse.json(
+      { error: "id is required and must be a non-empty string" },
+      { status: 400 }
+    );
+  }
+
+  const guildName = body?.guildName;
+  if (typeof guildName !== "string") {
+    return NextResponse.json(
+      { error: "guildName must be a string" },
+      { status: 400 }
+    );
+  }
+
+  if (guildName.trim().length === 0) {
+    return NextResponse.json(
+      { error: "guildName must not be empty" },
+      { status: 400 }
+    );
+  }
+
+  if (guildName.length > 200) {
+    return NextResponse.json(
+      { error: "guildName exceeds maximum length of 200 characters" },
+      { status: 400 }
+    );
+  }
+
+  const channelId = body?.channelId;
+  if (channelId !== null && typeof channelId !== "string") {
+    return NextResponse.json(
+      { error: "channelId must be null or a string" },
+      { status: 400 }
+    );
+  }
+
+  if (channelId === "") {
+    return NextResponse.json(
+      { error: "channelId must not be an empty string" },
+      { status: 400 }
+    );
+  }
+
+  const mirrorType = body?.mirrorType;
+  if (
+    mirrorType !== null &&
+    mirrorType !== "DISCORD_WEBHOOK" &&
+    mirrorType !== "SLACK_WEBHOOK"
+  ) {
+    return NextResponse.json(
+      { error: "mirrorType must be null, 'DISCORD_WEBHOOK', or 'SLACK_WEBHOOK'" },
+      { status: 400 }
+    );
+  }
+
+  const mirrorWebhookUrl = body?.mirrorWebhookUrl;
+  if (mirrorWebhookUrl !== null && typeof mirrorWebhookUrl !== "string") {
+    return NextResponse.json(
+      { error: "mirrorWebhookUrl must be null or a string" },
+      { status: 400 }
+    );
+  }
+
+  if (typeof mirrorWebhookUrl === "string" && mirrorWebhookUrl.trim().length > 0) {
+    if (mirrorWebhookUrl.length > 2000) {
+      return NextResponse.json(
+        { error: "mirrorWebhookUrl exceeds maximum length of 2000 characters" },
+        { status: 400 }
+      );
+    }
+  }
+
+  const updateData: {
+    guildName: string;
+    channelId: string | null;
+    mirrorType: string | null;
+    mirrorWebhookUrl: string | null;
+  } = {
+    guildName: guildName.trim(),
+    channelId: channelId,
+    mirrorType,
+    mirrorWebhookUrl: typeof mirrorWebhookUrl === "string" ? mirrorWebhookUrl.trim() : null,
+  };
+
+  try {
+    const existing = await prisma.discordServerConfig.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "DiscordServerConfig not found" },
+        { status: 404 }
+      );
+    }
+
+    const updated = await prisma.discordServerConfig.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        guildId: true,
+        guildName: true,
+        channelId: true,
+        mirrorType: true,
+        mirrorWebhookUrl: true,
+        updatedAt: true,
+      },
+    });
+
+    const safeConfig = {
+      id: updated.id,
+      guildId: updated.guildId,
+      guildName: updated.guildName,
+      channelId: updated.channelId,
+      mirrorType: updated.mirrorType,
+      mirrorWebhookConfigured:
+        !!updated.mirrorWebhookUrl && updated.mirrorWebhookUrl.length > 0,
+      updatedAt: updated.updatedAt,
+    };
+
+    return NextResponse.json(
+      { serverConfig: safeConfig },
       { status: 200 }
     );
   } catch {
