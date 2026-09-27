@@ -82,6 +82,19 @@ export default function LoginPage() {
           {loading ? "Logging in..." : "Login"}
         </button>
       </form>
+
+      <div style={{ marginTop: "2rem", padding: "1rem", border: "1px solid #e0e0e0", borderRadius: "6px", backgroundColor: "#fafafa" }}>
+        <h2 style={{ margin: "0 0 0.5rem 0", fontSize: "1.1em" }}>Evaluator Access</h2>
+        <p style={{ margin: "0 0 0.5rem 0", fontSize: "0.9em", color: "#555" }}>
+          Email: <code style={{ backgroundColor: "#e8e8e8", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>pruthwirajnayak08@gmail.com</code>
+        </p>
+        <p style={{ margin: "0 0 0.5rem 0", fontSize: "0.9em", color: "#555" }}>
+          Password: <code style={{ backgroundColor: "#e8e8e8", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>Abstrabit@1234</code>
+        </p>
+        <p style={{ margin: 0, fontSize: "0.8em", color: "#888", fontStyle: "italic" }}>
+          These credentials are for evaluation of the deployed assessment only.
+        </p>
+      </div>
     </main>
   );
 }
